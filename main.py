@@ -155,7 +155,7 @@ async def on_message(message):
                 "REGLA ABSOLUTA: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia. Sé directo, breve y mantén la vibra relajada."
             )
 
-            messages = [{"role": "system", content: system_prompt}]
+            messages = [{"role": "system", "content": system_prompt}]
             messages.extend(contexto_historial)
             messages.append({"role": "user", "content": pregunta if pregunta else "¿Qué onda?"})
             
