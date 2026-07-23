@@ -215,45 +215,40 @@ async def on_message(message):
                 if attachment.content_type and "image" in attachment.content_type:
                     imagen_url = attachment.url
                     break
+
         async with message.channel.typing():
             try:
                 system_prompt = (
                     "Eres un asistente directo y útil, pero tienes una personalidad sutilmente relajada. "
-                    "REGLA DE IDIOMA ABSOLUTA: Debes pensar, razonar y responder EXCLUSIVAMENTE en español. "
+                    "REGLA DE IDIOMA ABSOLUTA: Debes responder EXCLUSIVAMENTE en español. "
                     "REGLA DE ORO DE HUMOR: En momentos especiales de la conversación, incluye OBLIGATORIAMENTE **exactamente una sola palabra** de humor de internet (por ejemplo: 'basado', 'aura', 'xd', 'god', 'cenizo' o similares) integrada de forma natural en toda la respuesta. Nunca uses más de una palabra de este tipo por mensaje. "
                     "REGLA ABSOLUTA DE EXTENSIÓN: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia."
                 )
 
-                user_content = []
-                if imagen_url:
-                    user_content.append({"type": "image_url", "image_url": {"url": imagen_url}})
-                
+                # Combinamos historial y texto de la pregunta (sin imágenes)
                 texto_final = pregunta if pregunta else "¿Qué onda con esto?"
-                user_content.append({"type": "text", "text": texto_final})
-
+                
                 messages = [{"role": "system", "content": system_prompt}]
                 messages.extend(contexto_historial)
-                messages.append({"role": "user", "content": user_content})
+                messages.append({"role": "user", "content": texto_final})
 
                 completion = client.chat.completions.create(
-                    model="qwen/qwen3.6-27b",
+                    model="llama-3.3-70b-versatile",  # <--- Modelo de texto puro, rapidísimo y muy estable en Groq
                     messages=messages,
                     max_tokens=120,
                     temperature=0.7,
                 )
+
                 reply_text = completion.choices[0].message.content or "xd."
 
-                # --- FILTRO DE LIMPIEZA CORREGIDO ---
-                if "</think>" in reply_text:
-                    reply_text = reply_text.split("</think>")[-1].strip()
-
                 await message.reply(reply_text)
-                
+
             except Exception as e:
-                print(f"Error con Groq (Vision): {e}")
+                print(f"Error con Groq: {e}")
                 await message.reply(f"Me quedé sin saldo. Error: `{str(e)}`")
         
         return
+    
         
                 
         
