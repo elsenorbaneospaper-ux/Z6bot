@@ -219,6 +219,7 @@ async def on_message(message):
             try:
                 system_prompt = (
                     "Eres un asistente directo y útil, pero tienes una personalidad sutilmente relajada. "
+                    "REGLA DE IDIOMA ABSOLUTA: Debes pensar, razonar y responder EXCLUSIVAMENTE en español. "
                     "REGLA DE ORO DE HUMOR: En momentos especiales de la conversación, incluye OBLIGATORIAMENTE **exactamente una sola palabra** de humor de internet (por ejemplo: 'basado', 'aura', 'xd', 'god', 'cenizo' o similares) integrada de forma natural en toda la respuesta. Nunca uses más de una palabra de este tipo por mensaje. "
                     "REGLA ABSOLUTA DE EXTENSIÓN: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia."
                 )
@@ -240,16 +241,14 @@ async def on_message(message):
                     max_tokens=120,
                     temperature=0.7,
                 )
-
                 reply_text = completion.choices[0].message.content or "xd."
 
-                # --- LIMPIEZA DE PENSAMIENTO ---
-                if "<think>" in reply_text and "</think>" in reply_text:
-                    parts = reply_text.split("</think>")
-                    reply_text = parts[-1].strip()
+                # --- FILTRO DE LIMPIEZA CORREGIDO ---
+                if "</think>" in reply_text:
+                    reply_text = reply_text.split("</think>")[-1].strip()
 
                 await message.reply(reply_text)
-
+                
             except Exception as e:
                 print(f"Error con Groq (Vision): {e}")
                 await message.reply(f"Me quedé sin saldo. Error: `{str(e)}`")
