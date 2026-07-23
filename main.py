@@ -393,6 +393,7 @@ async def traducir(interaction: discord.Interaction, idioma_de_origen: app_comma
         traduccion = GoogleTranslator(source=idioma_de_origen.value, target=idioma_a_traducir.value).translate(mensaje)
         
         await interaction.channel.send(traduccion)
+        ephemeral=True
         
         await interaction.followup.send(
             f"✅ Traducido de **{idioma_de_origen.name}** a **{idioma_a_traducir.name}** y enviado correctamente.",
