@@ -161,7 +161,7 @@ async def on_message(message):
             
             try:
                 completion = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.1-8b-instant",
                     messages=messages,
                     max_tokens=120,
                     temperature=0.8,
