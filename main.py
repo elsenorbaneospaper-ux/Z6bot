@@ -236,7 +236,7 @@ async def on_message(message):
                 messages.append({"role": "user", "content": user_content})
 
                 completion = client.chat.completions.create(
-                    model="meta-llama/llama-4-maverick-17b-128e-instruct",
+                    model="qwen/qwen3.6-27b",
                     messages=messages,
                     max_tokens=120,
                     temperature=0.7,
