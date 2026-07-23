@@ -134,32 +134,41 @@ async def on_message(message):
                 await message.channel.send(mensaje_respuesta)
 
     # --- 5. COMANDO Z6 ASK (CON REPLAY Y GROQ) ---
+        # --- 5. COMANDO Z6 ASK (BLINDADO Y CON HISTORIAL) ---
     if contenido_lower.startswith("z6 ask"):
         pregunta = message.content[6:].strip()
 
-        # Obtener contexto si el usuario hizo reply a un mensaje previo
         contexto_historial = []
+        
+        # Intentar obtener el mensaje al que se hizo reply de forma segura
         if message.reference and message.reference.message_id:
             try:
                 mensaje_ref = await message.channel.fetch_message(message.reference.message_id)
-                contexto_historial.append({
-                    "role": "user" if mensaje_ref.author != bot.user else "assistant", 
-                    "content": mensaje_ref.content
-                })
-            except Exception:
-                pass
+                if mensaje_ref:
+                    # Añadir lo que dijo el usuario o el bot anteriormente
+                    rol = "assistant" if mensaje_ref.author == bot.user else "user"
+                    contenido_ref = mensaje_ref.content
+                    if contenido_ref.lower().startswith("z6 ask"):
+                        contenido_ref = contenido_ref[6:].strip()
+                    
+                    contexto_historial.append({
+                        "role": rol, 
+                        "content": contenido_ref if contenido_ref else "..."
+                    })
+            except Exception as e:
+                print(f"No se pudo obtener el mensaje referenciado: {e}")
 
         async with message.channel.typing():
-            system_prompt = (
-                "Eres un tipo super chill, relajado y con un humor avanzado de internet (usas términos como aura, xd, basado, etc.). "
-                "REGLA ABSOLUTA: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia. Sé directo, breve y mantén la vibra relajada."
-            )
-
-            messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(contexto_historial)
-            messages.append({"role": "user", "content": pregunta if pregunta else "¿Qué onda?"})
-            
             try:
+                system_prompt = (
+                    "Eres un tipo super chill, relajado y con un humor avanzado de internet (usas términos como aura, xd, basado, etc.). "
+                    "REGLA ABSOLUTA: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia. Sé directo, breve y mantén la vibra relajada."
+                )
+
+                messages = [{"role": "system", "content": system_prompt}]
+                messages.extend(contexto_historial)
+                messages.append({"role": "user", "content": pregunta if pregunta else "¿Qué onda?"})
+
                 completion = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=messages,
@@ -167,14 +176,15 @@ async def on_message(message):
                     temperature=0.8,
                 )
 
-                reply_text = completion.choices[0].message.content or "Se me fue el aura, xd. Inténtalo de nuevo."
+                reply_text = completion.choices[0].message.content or "Se me fue el aura, xd."
                 await message.reply(reply_text)
 
             except Exception as e:
-                print(f"Error con Groq en z6 ask: {e}")
-                await message.reply(f"Error exacto de Python: `{str(e)}`")
-                
+                print(f"Error general en z6 ask: {e}")
+                await message.reply(f"Me quedé sin saldo de aura, xd. Error: `{str(e)}`")
+        
         return
+        
         
     # --- 6. PROCESAR COMANDOS TRADICIONALES ---
     await bot.process_commands(message)
