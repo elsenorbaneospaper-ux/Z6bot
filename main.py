@@ -294,6 +294,7 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
         )
 
 @app_commands.command(
+@bot.tree.command(
     name="msj_traducido",
     description="Traduce tu mensaje del español al idioma seleccionado y lo envía de forma privada."
 )
@@ -331,6 +332,7 @@ async def msj_traducido(interaction: discord.Interaction, idioma: app_commands.C
             ephemeral=True
         )
 
+# Manejador de errores de permisos
 @msj_traducido.error
 async def msj_traducido_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
@@ -343,8 +345,7 @@ async def msj_traducido_error(interaction: discord.Interaction, error: app_comma
             await interaction.response.send_message(f"❌ Ocurrió un error: {error}", ephemeral=True)
         else:
             await interaction.followup.send(f"❌ Ocurrió un error: {error}", ephemeral=True)
-            
-
+                                     
 # 2. Comando Slash con restricción de administrador
 @bot.tree.command(name="mensaje_o_embed", description="Envía un mensaje tipo formulario")
 @app_commands.checks.has_permissions(administrator=True)
