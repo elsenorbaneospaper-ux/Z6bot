@@ -167,56 +167,90 @@ async def on_message(message):
                 await message.channel.send(mensaje_respuesta)
 
     
-                    # --- 5. COMANDO Z6 ASK (BLINDADO Y CON HISTORIAL) ---
-    if contenido_lower.startswith("z6 ask"):
-        pregunta = message.content[6:].strip()
+    # --- 5. COMANDO INTELIGENTE (MENCIÓN + REPLY + IMÁGENES + HISTORIAL DE 3 MENSAJES + 1 PALABRA DE HUMOR) ---
+    if bot.user in message.mentions:
+        pregunta = message.content
+        for mention in message.mentions:
+            pregunta = pregunta.replace(f"<@{mention.id}>", "").replace(f"<@!{mention.id}>", "").strip()
 
         contexto_historial = []
-        
-        # Intentar obtener el mensaje al que se hizo reply de forma segura
-        if message.reference and message.reference.message_id:
-            try:
-                mensaje_ref = await message.channel.fetch_message(message.reference.message_id)
-                if mensaje_ref:
-                    # Añadir lo que dijo el usuario o el bot anteriormente
-                    rol = "assistant" if mensaje_ref.author == bot.user else "user"
-                    contenido_ref = mensaje_ref.content
-                    if contenido_ref.lower().startswith("z6 ask"):
-                        contenido_ref = contenido_ref[6:].strip()
-                    
-                    contexto_historial.append({
-                        "role": rol, 
-                        "content": contenido_ref if contenido_ref else "..."
-                    })
-            except Exception as e:
-                print(f"No se pudo obtener el mensaje referenciado: {e}")
+        imagen_url = None
+        mensaje_actual = message
+
+        # Rastrear hacia atrás el hilo de replies hasta un máximo de 3 mensajes previos
+        for _ in range(3):
+            if mensaje_actual.reference and mensaje_actual.reference.message_id:
+                try:
+                    mensaje_ref = await message.channel.fetch_message(mensaje_actual.reference.message_id)
+                    if mensaje_ref:
+                        rol_ref = "assistant" if mensaje_ref.author == bot.user else "user"
+                        autor_nombre = mensaje_ref.author.display_name
+                        contenido_ref = f"[{autor_nombre}]: {mensaje_ref.content}" if mensaje_ref.content else f"[{autor_nombre} envió contenido multimedia]"
+                        
+                        # Insertar al inicio para mantener el orden cronológico correcto
+                        contexto_historial.insert(0, {
+                            "role": rol_ref, 
+                            "content": contenido_ref
+                        })
+
+                        # Capturar imagen si el mensaje del hilo tiene adjuntos
+                        if not imagen_url and mensaje_ref.attachments:
+                            for attachment in mensaje_ref.attachments:
+                                if attachment.content_type and "image" in attachment.content_type:
+                                    imagen_url = attachment.url
+                                    break
+
+                        mensaje_actual = mensaje_ref
+                    else:
+                        break
+                except Exception as e:
+                    print(f"Error al obtener mensaje del historial: {e}")
+                    break
+            else:
+                break
+
+        # Revisar si el mensaje actual que menciona al bot trae una imagen adjunta
+        if not imagen_url and message.attachments:
+            for attachment in message.attachments:
+                if attachment.content_type and "image" in attachment.content_type:
+                    imagen_url = attachment.url
+                    break
 
         async with message.channel.typing():
             try:
                 system_prompt = (
-                    "Eres un tipo super chill, relajado y con un humor avanzado de internet (usas términos como aura, xd, basado, etc.). "
-                    "REGLA ABSOLUTA: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia. Sé directo, breve y mantén la vibra relajada."
+                    "Eres un asistente directo y útil, pero tienes una personalidad sutilmente relajada. "
+                    "REGLA DE ORO DE HUMOR: En momentos especiales de la conversación, incluye OBLIGATORIAMENTE **exactamente una sola palabra** de humor de internet (por ejemplo: 'basado', 'aura', 'xd', 'god', 'cenizo' o similares) integrada de forma natural en toda la respuesta. Nunca uses más de una palabra de este tipo por mensaje. "
+                    "REGLA ABSOLUTA DE EXTENSIÓN: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia."
                 )
+
+                user_content = []
+                if imagen_url:
+                    user_content.append({"type": "image_url", "image_url": {"url": imagen_url}})
+                
+                texto_final = pregunta if pregunta else "¿Qué onda con esto?"
+                user_content.append({"type": "text", "text": texto_final})
 
                 messages = [{"role": "system", "content": system_prompt}]
                 messages.extend(contexto_historial)
-                messages.append({"role": "user", "content": pregunta if pregunta else "¿Qué onda?"})
+                messages.append({"role": "user", "content": user_content})
 
                 completion = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.2-11b-vision-preview",
                     messages=messages,
                     max_tokens=120,
-                    temperature=0.8,
+                    temperature=0.7,
                 )
 
-                reply_text = completion.choices[0].message.content or "Se me fue el aura, xd."
+                reply_text = completion.choices[0].message.content or "xd."
                 await message.reply(reply_text)
 
             except Exception as e:
-                print(f"Error general en z6 ask: {e}")
-                await message.reply(f"Me quedé sin saldo de aura, xd. Error: `{str(e)}`")
+                print(f"Error con Groq (Vision): {e}")
+                await message.reply(f"Me quedé sin saldo. Error: `{str(e)}`")
         
         return
+                
         
         
     # --- 6. PROCESAR COMANDOS TRADICIONALES ---
