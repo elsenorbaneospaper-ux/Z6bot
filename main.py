@@ -133,7 +133,50 @@ async def on_message(message):
                 mensaje_respuesta = datos[guild_id][activador]
                 await message.channel.send(mensaje_respuesta)
 
-    # --- 5. PROCESAR COMANDOS TRADICIONALES ---
+    # --- 5. COMANDO Z6 ASK (CON REPLAY Y GROQ) ---
+    if contenido_lower.startswith("z6 ask"):
+        pregunta = message.content[6:].strip()
+
+        # Obtener contexto si el usuario hizo reply a un mensaje previo
+        contexto_historial = []
+        if message.reference and message.reference.message_id:
+            try:
+                mensaje_ref = await message.channel.fetch_message(message.reference.message_id)
+                contexto_historial.append({
+                    "role": "user" if mensaje_ref.author != bot.user else "assistant", 
+                    "content": mensaje_ref.content
+                })
+            except Exception:
+                pass
+
+        async with message.channel.typing():
+            system_prompt = (
+                "Eres un tipo super chill, relajado y con un humor avanzado de internet (usas términos como aura, xd, basado, etc.). "
+                "REGLA ABSOLUTA: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia. Sé directo, breve y mantén la vibra relajada."
+            )
+
+            messages = [{"role": "system", content: system_prompt}]
+            messages.extend(contexto_historial)
+            messages.append({"role": "user", content: pregunta if pregunta else "¿Qué onda?"})
+
+            try:
+                completion = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=messages,
+                    max_tokens=120,
+                    temperature=0.8,
+                )
+
+                reply_text = completion.choices[0].message.content or "Se me fue el aura, xd. Inténtalo de nuevo."
+                await message.reply(reply_text)
+
+            except Exception as e:
+                print(f"Error con Groq en z6 ask: {e}")
+                await message.reply("Me quedé sin saldo de aura, xd. Hubo un error procesando tu solicitud.")
+        
+        return
+        
+    # --- 6. PROCESAR COMANDOS TRADICIONALES ---
     await bot.process_commands(message)
 
 # ==================== COMANDO /mensaje ====================
@@ -654,37 +697,7 @@ async def video(interaction: discord.Interaction, archivo: discord.Attachment, m
         )
 
 
-# Asegúrate de que el cliente de Groq esté inicializado arriba en tu archivo (ej: client = Groq(api_key=os.environ.get("GROQ_API_KEY")))
-# Y que tengas instalado el paquete: pip install groq
 
-@bot.tree.command(name="askia", description="Pregúntale algo a la IA con estilo chill y humor avanzado")
-@app_commands.describe(pregunta="Lo que le quieres decir a la IA")
-async def askia(interaction: discord.Interaction, pregunta: str):
-    await interaction.response.defer()
-
-    system_prompt = (
-        "Eres un tipo super chill, relajado y con un humor avanzado de internet (usas términos como aura, xd, basado, etc.). "
-        "REGLA ABSOLUTA: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia. Sé directo, breve y mantén la vibra relajada."
-    )
-
-    try:
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", content: system_prompt},
-                {"role": "user", content: pregunta}
-            ],
-            max_tokens=120,
-            temperature=0.8,
-        )
-
-        reply_text = completion.choices[0].message.content or "Se me fue el aura, xd. Inténtalo de nuevo."
-        await interaction.followup.send(reply_text)
-
-    except Exception as e:
-        print(f"Error con Groq en /askia: {e}")
-        await interaction.followup.send("Me quedé sin saldo de aura, xd. Hubo un error procesando tu solicitud.")
-        
 # ==================== SERVIDOR FLASK ====================
 def quitar_tildes(texto): return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
     
