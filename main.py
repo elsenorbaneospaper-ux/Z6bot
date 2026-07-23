@@ -62,7 +62,7 @@ async def on_ready():
         print(f'❌ Error al sincronizar comandos: {e}')
 
 
-# Carga los datos AFK al inicio de tu archivo (o asegúrate de que esté arriba)
+# Carga los datos AFK al inicio de tu archivo
 AFK_FILE = "afk.json"
 
 def cargar_afk():
@@ -91,11 +91,11 @@ async def on_message(message):
         del afk_users[message.author.id]
         guardar_afk(afk_users)
         try:
-            await message.channel.send(f"¡{message.author.mention} ha vuelto, y ya no está afk!")
+            await message.channel.send(f"🎉 ¡Bienvenido de vuelta, {message.author.mention}! Ya te he retirado el estado AFK. 🚀")
         except discord.HTTPException:
             pass
 
-    # --- 2. COMANDO AFK (Detecta z6 afk o Z6 afk) ---
+    # --- 2. COMANDO AFK (Usa EMBED y REPLY) ---
     contenido_lower = message.content.lower()
     if contenido_lower.startswith("z6 afk"):
         partes = message.content.split(" ", 2)
@@ -104,15 +104,48 @@ async def on_message(message):
         afk_users[message.author.id] = razon
         guardar_afk(afk_users)
         
-        await message.reply(f"¡Listo! Te has puesto AFK.\n**Razón:** {razon}")
+        # Creamos el Embed decorado para la activación
+        embed_afk = discord.Embed(
+            title="💤 ¡Modo AFK Activado!",
+            description=f"Te has puesto ausente correctamente.",
+            color=discord.Color.orange()
+        )
+        embed_afk.add_field(name="📌 Razón", value=razon, inline=False)
+        embed_afk.set_footer(text="⚡ Se te quitará el estado en cuanto escribas un mensaje.")
+        
+        await message.reply(embed=embed_afk)
         return
 
-    # --- 3. DETECTAR MENCIONES A USUARIOS AFK ---
+    # --- 3. DETECTAR MENCIONES Y CONEXIONES (Mensaje normal con emojis) ---
     if message.mentions:
         for user in message.mentions:
             if user.id in afk_users:
                 razon = afk_users[user.id]
-                await message.reply(f"{user.mention} está AFK.\n**Razón:** {razon}")
+                
+                accion_extra = None
+                for activity in user.activities:
+                    if isinstance(activity, discord.Spotify):
+                        accion_extra = f"🎧 Escuchando **{activity.title}** de *{', '.join(activity.artists)}* en Spotify"
+                        break
+                    elif activity.type == discord.ActivityType.playing:
+                        accion_extra = f"🎮 Jugando a **{activity.name}**"
+                        break
+                    elif activity.type == discord.ActivityType.streaming:
+                        accion_extra = f"📺 Transmitiendo en directo: **{activity.name}**"
+                        break
+                    elif activity.type == discord.ActivityType.listening:
+                        accion_extra = f"🎵 Escuchando **{activity.name}**"
+                        break
+                    elif activity.name:
+                        accion_extra = f"✨ Actividad: **{activity.name}**"
+                        break
+
+                # Mensaje normal con emojis para las menciones
+                texto_respuesta = f"⚠️ **{user.mention} se encuentra AFK en este momento.**\n> 📌 **Razón:** {razon}"
+                if accion_extra:
+                    texto_respuesta += f"\n> {accion_extra}"
+
+                await message.reply(texto_respuesta)
 
     # --- 4. TUS RESPUESTAS AUTOMÁTICAS ---
     import json
@@ -133,8 +166,8 @@ async def on_message(message):
                 mensaje_respuesta = datos[guild_id][activador]
                 await message.channel.send(mensaje_respuesta)
 
-    # --- 5. COMANDO Z6 ASK (CON REPLAY Y GROQ) ---
-        # --- 5. COMANDO Z6 ASK (BLINDADO Y CON HISTORIAL) ---
+    
+                    # --- 5. COMANDO Z6 ASK (BLINDADO Y CON HISTORIAL) ---
     if contenido_lower.startswith("z6 ask"):
         pregunta = message.content[6:].strip()
 
