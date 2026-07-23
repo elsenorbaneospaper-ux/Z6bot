@@ -215,8 +215,7 @@ async def on_message(message):
                 if attachment.content_type and "image" in attachment.content_type:
                     imagen_url = attachment.url
                     break
-
-                async with message.channel.typing():
+        async with message.channel.typing():
             try:
                 system_prompt = (
                     "Eres un asistente directo y útil, pero tienes una personalidad sutilmente relajada. "
@@ -236,7 +235,7 @@ async def on_message(message):
                 messages.append({"role": "user", "content": user_content})
 
                 completion = client.chat.completions.create(
-                    model="qwen/qwen3.6-27b",  # <--- Modelo oficial con soporte de visión activo en Groq
+                    model="qwen/qwen3.6-27b",
                     messages=messages,
                     max_tokens=120,
                     temperature=0.7,
@@ -256,6 +255,7 @@ async def on_message(message):
                 await message.reply(f"Me quedé sin saldo. Error: `{str(e)}`")
         
         return
+        
                 
         
         
