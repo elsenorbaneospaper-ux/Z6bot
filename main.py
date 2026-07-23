@@ -11,6 +11,8 @@ from discord.ui import Modal, TextInput
 from discord import TextStyle, Color, Embed, Interaction
 import difflib
 import unicodedata
+from groq import Groq
+
 
 # Cargar variables de entorno
 load_dotenv()
@@ -651,7 +653,38 @@ async def video(interaction: discord.Interaction, archivo: discord.Attachment, m
             ephemeral=True
         )
 
-    
+
+# Asegúrate de que el cliente de Groq esté inicializado arriba en tu archivo (ej: client = Groq(api_key=os.environ.get("GROQ_API_KEY")))
+# Y que tengas instalado el paquete: pip install groq
+
+@bot.tree.command(name="askia", description="Pregúntale algo a la IA con estilo chill y humor avanzado")
+@app_commands.describe(pregunta="Lo que le quieres decir a la IA")
+async def askia(interaction: discord.Interaction, pregunta: str):
+    await interaction.response.defer()
+
+    system_prompt = (
+        "Eres un tipo super chill, relajado y con un humor avanzado de internet (usas términos como aura, xd, basado, etc.). "
+        "REGLA ABSOLUTA: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia. Sé directo, breve y mantén la vibra relajada."
+    )
+
+    try:
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", content: system_prompt},
+                {"role": "user", content: pregunta}
+            ],
+            max_tokens=120,
+            temperature=0.8,
+        )
+
+        reply_text = completion.choices[0].message.content or "Se me fue el aura, xd. Inténtalo de nuevo."
+        await interaction.followup.send(reply_text)
+
+    except Exception as e:
+        print(f"Error con Groq en /askia: {e}")
+        await interaction.followup.send("Me quedé sin saldo de aura, xd. Hubo un error procesando tu solicitud.")
+        
 # ==================== SERVIDOR FLASK ====================
 def quitar_tildes(texto): return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
     
