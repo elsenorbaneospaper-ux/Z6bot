@@ -17,7 +17,7 @@ from groq import Groq
 # Cargar variables de entorno
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 # Inicializar bot de Discord
 intents = discord.Intents.default()
 intents.message_content = True
