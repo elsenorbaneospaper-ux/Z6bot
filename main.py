@@ -161,7 +161,7 @@ async def on_message(message):
             
             try:
                 completion = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model="llama-3.3-70b-versatile",
                     messages=messages,
                     max_tokens=120,
                     temperature=0.8,
@@ -172,8 +172,8 @@ async def on_message(message):
 
             except Exception as e:
                 print(f"Error con Groq en z6 ask: {e}")
-                await message.reply("Me quedé sin saldo de aura, xd. Hubo un error procesando tu solicitud.")
-        
+                await message.reply(f"Error exacto de Python: `{str(e)}`")
+                
         return
         
     # --- 6. PROCESAR COMANDOS TRADICIONALES ---
