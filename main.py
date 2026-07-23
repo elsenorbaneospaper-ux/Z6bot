@@ -12,6 +12,7 @@ from discord import TextStyle, Color, Embed, Interaction
 import difflib
 import unicodedata
 from groq import Groq
+from deep_translator import GoogleTranslator
 
 
 # Cargar variables de entorno
@@ -291,6 +292,58 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
             content="✅ Mensaje enviado correctamente.", 
             ephemeral=True
         )
+
+@app_commands.command(
+    name="msj_traducido",
+    description="Traduce tu mensaje del español al idioma seleccionado y lo envía de forma privada."
+)
+@app_commands.choices(idioma=[
+    app_commands.Choice(name="Inglés", value="en"),
+    app_commands.Choice(name="Francés", value="fr"),
+    app_commands.Choice(name="Portugués", value="pt"),
+    app_commands.Choice(name="Italiano", value="it"),
+    app_commands.Choice(name="Alemán", value="de"),
+    app_commands.Choice(name="Japonés", value="ja"),
+    app_commands.Choice(name="Coreano", value="ko"),
+    app_commands.Choice(name="Ruso", value="ru"),
+])
+@app_commands.describe(
+    idioma="Selecciona el idioma al que deseas traducir",
+    mensaje="El texto en español que deseas traducir"
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def msj_traducido(interaction: discord.Interaction, idioma: app_commands.Choice[str], mensaje: str):
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        codigo_idioma = idioma.value
+        nombre_idioma = idioma.name
+        
+        traduccion = GoogleTranslator(source='es', target=codigo_idioma).translate(mensaje)
+        
+        await interaction.followup.send(
+            f"🌐 **Traducción al {nombre_idioma}:**\n{traduccion}",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Ocurrió un error al realizar la traducción.\n`Detalle: {e}`",
+            ephemeral=True
+        )
+
+@msj_traducido.error
+async def msj_traducido_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        if not interaction.response.is_done():
+            await interaction.response.send_message("❌ No tienes permisos de administrador para usar este comando.", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ No tienes permisos de administrador para usar este comando.", ephemeral=True)
+    else:
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"❌ Ocurrió un error: {error}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ Ocurrió un error: {error}", ephemeral=True)
+            
 
 # 2. Comando Slash con restricción de administrador
 @bot.tree.command(name="mensaje_o_embed", description="Envía un mensaje tipo formulario")
