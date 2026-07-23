@@ -157,8 +157,8 @@ async def on_message(message):
 
             messages = [{"role": "system", content: system_prompt}]
             messages.extend(contexto_historial)
-            messages.append({"role": "user", content: pregunta if pregunta else "¿Qué onda?"})
-
+            messages.append({"role": "user", "content": pregunta if pregunta else "¿Qué onda?"})
+            
             try:
                 completion = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
