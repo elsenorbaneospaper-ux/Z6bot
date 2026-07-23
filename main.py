@@ -295,61 +295,6 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
 
 
 # ==========================================
-# 1. COMANDO: /msj_traducido (Traduce del español por defecto)
-# ==========================================
-@bot.tree.command(
-    name="msj_traducido",
-    description="Traduce tu mensaje del español al idioma seleccionado y lo envía de forma limpia al canal."
-)
-@app_commands.choices(idioma=[
-    app_commands.Choice(name="Inglés", value="en"),
-    app_commands.Choice(name="Francés", value="fr"),
-    app_commands.Choice(name="Portugués", value="pt"),
-    app_commands.Choice(name="Italiano", value="it"),
-    app_commands.Choice(name="Alemán", value="de"),
-    app_commands.Choice(name="Japonés", value="ja"),
-    app_commands.Choice(name="Coreano", value="ko"),
-    app_commands.Choice(name="Ruso", value="ru"),
-])
-@app_commands.describe(
-    idioma="Selecciona el idioma al que deseas traducir",
-    mensaje="El texto en español que deseas traducir"
-)
-@app_commands.checks.has_permissions(administrator=True)
-async def msj_traducido(interaction: discord.Interaction, idioma: app_commands.Choice[str], mensaje: str):
-    await interaction.response.defer(ephemeral=True)
-    
-    try:
-        codigo_idioma = idioma.value
-        nombre_idioma = idioma.name
-        
-        traduccion = GoogleTranslator(source='es', target=codigo_idioma).translate(mensaje)
-        
-        await interaction.channel.send(traduccion)
-        
-        await interaction.followup.send(
-            f"✅ Mensaje traducido al **{nombre_idioma}** enviado correctamente al canal.",
-            ephemeral=True
-        )
-    except Exception as e:
-        await interaction.followup.send(
-            f"❌ Ocurrió un error al realizar la traducción.\n`Detalle: {e}`",
-            ephemeral=True
-        )
-
-@msj_traducido.error
-async def msj_traducido_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
-        if not interaction.response.is_done():
-            await interaction.response.send_message("❌ No tienes permisos de administrador para usar este comando.", ephemeral=True)
-        else:
-            await interaction.followup.send("❌ No tienes permisos de administrador para usar este comando.", ephemeral=True)
-    else:
-        if not interaction.response.is_done():
-            await interaction.response.send_message(f"❌ Ocurrió un error: {error}", ephemeral=True)
-        else:
-            await interaction.followup.send(f"❌ Ocurrió un error: {error}", ephemeral=True)
-
 
 # ==========================================
 # 2. COMANDO: /traducir (Con origen y destino personalizados)
@@ -393,7 +338,6 @@ async def traducir(interaction: discord.Interaction, idioma_de_origen: app_comma
         traduccion = GoogleTranslator(source=idioma_de_origen.value, target=idioma_a_traducir.value).translate(mensaje)
         
         await interaction.channel.send(traduccion)
-        ephemeral=True
         
         await interaction.followup.send(
             f"✅ Traducido de **{idioma_de_origen.name}** a **{idioma_a_traducir.name}** y enviado correctamente.",
