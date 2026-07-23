@@ -216,7 +216,7 @@ async def on_message(message):
                     imagen_url = attachment.url
                     break
 
-        async with message.channel.typing():
+                async with message.channel.typing():
             try:
                 system_prompt = (
                     "Eres un asistente directo y útil, pero tienes una personalidad sutilmente relajada. "
@@ -236,13 +236,19 @@ async def on_message(message):
                 messages.append({"role": "user", "content": user_content})
 
                 completion = client.chat.completions.create(
-                    model="meta-llama/llama-4-scout-17b-16e-instruct",
+                    model="qwen/qwen3.6-27b",  # <--- Modelo oficial con soporte de visión activo en Groq
                     messages=messages,
                     max_tokens=120,
                     temperature=0.7,
                 )
 
                 reply_text = completion.choices[0].message.content or "xd."
+
+                # --- LIMPIEZA DE PENSAMIENTO ---
+                if "<think>" in reply_text and "</think>" in reply_text:
+                    parts = reply_text.split("</think>")
+                    reply_text = parts[-1].strip()
+
                 await message.reply(reply_text)
 
             except Exception as e:
