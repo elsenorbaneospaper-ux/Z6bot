@@ -293,7 +293,7 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
             ephemeral=True
         )
 
-@app_commands.command(
+
 @bot.tree.command(
     name="msj_traducido",
     description="Traduce tu mensaje del español al idioma seleccionado y lo envía de forma privada."
