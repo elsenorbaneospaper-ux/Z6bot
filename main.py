@@ -554,10 +554,13 @@ class VerTextoView(View):
 @bot.tree.command(name="vertexto", description="Muestra una lista de los textos guardados para gestionarlos")
 @app_commands.checks.has_permissions(administrator=True)
 async def vertexto(interaction: discord.Interaction):
+    # 1. Diferimos la respuesta de inmediato para evitar el error de los 3 segundos
+    await interaction.response.defer(ephemeral=True)
+
     guild_id = str(interaction.guild_id)
 
     if not os.path.exists(archivo):
-        await interaction.response.send_message("⚠️ No hay ningún archivo de respuestas guardadas todavía.", ephemeral=True)
+        await interaction.followup.send("⚠️ No hay ningún archivo de respuestas guardadas todavía.", ephemeral=True)
         return
 
     with open(archivo, "r", encoding="utf-8") as f:
@@ -569,12 +572,14 @@ async def vertexto(interaction: discord.Interaction):
     textos_servidor = datos.get(guild_id, {})
 
     if not textos_servidor:
-        await interaction.response.send_message("⚠️ No hay textos guardados en este servidor.", ephemeral=True)
+        await interaction.followup.send("⚠️ No hay textos guardados en este servidor.", ephemeral=True)
         return
 
     view = VerTextoView(textos_servidor)
-    await interaction.response.send_message("Selecciona de la lista el texto que deseas ver o administrar:", view=view, ephemeral=True)
-
+    
+    # 2. Usamos followup.send en lugar de interaction.response.send_message
+    await interaction.followup.send("Selecciona de la lista el texto que deseas ver o administrar:", view=view, ephemeral=True)
+    
 
 # Manejador de errores para permisos de /vertexto
 @vertexto.error
