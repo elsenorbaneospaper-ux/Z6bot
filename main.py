@@ -188,7 +188,7 @@ async def on_message(message):
 
     # 2. COMANDO AFK (Con prefijo z6)
     contenido_lower = message.content.lower()
-    if contenido_lower.startswith(";z6 afk"):
+    if contenido_lower.startswith("z6 afk"):
         partes = message.content.split(" ", 2)
         razon = partes[2] if len(partes) > 2 else "Sin razón especificada"
 
