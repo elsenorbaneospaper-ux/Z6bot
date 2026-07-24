@@ -14,6 +14,8 @@ import unicodedata
 from groq import Groq
 from deep_translator import GoogleTranslator
 from discord.ui import View, Select, Button
+import re
+from datetime import datetime, timedelta
 
 
 # Cargar variables de entorno
@@ -271,6 +273,130 @@ async def on_message(message):
         
     # --- 6. PROCESAR COMANDOS TRADICIONALES ---
     await bot.process_commands(message)
+
+# Vista interactiva para el botón de repetir
+class RepeatView(discord.ui.View):
+
+  def __init__(self, duration_seconds: int, reason: str):
+    super().__init__(timeout=None)
+    self.duration_seconds = duration_seconds
+    self.reason = reason
+
+  @discord.ui.button(label="Repetir", emoji="🔃", style=discord.ButtonStyle.blurple)
+  async def repeat_reminder(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    future_time = datetime.now() + timedelta(seconds=self.duration_seconds)
+    timestamp = int(future_time.timestamp())
+
+    reason_text = (
+        f"**Razón:** {self.reason}"
+        if self.reason
+        else "**Razón:** No me dijiste una razón por la cuál debía recordarte"
+    )
+
+    embed = discord.Embed(
+        title="⏰ ¡Recordatorio Repetido!",
+        description=(
+            f"📅 **Termina el:** <t:{timestamp}:F> (<t:{timestamp}:R>)\n\n"
+            f"{reason_text}"
+        ),
+        color=discord.Color.blue(),
+    )
+
+    await interaction.response.send_message(
+        content=f"{interaction.user.mention} (Recordatorio repetido)",
+        embed=embed,
+        view=RepeatView(self.duration_seconds, self.reason),
+    )
+
+    await asyncio.sleep(self.duration_seconds)
+
+    final_embed = discord.Embed(
+        title="🔔 ¡Tiempo cumplido (Repetido)!",
+        description=reason_text,
+        color=discord.Color.gold(),
+    )
+    await interaction.followup.send(
+        content=f"{interaction.user.mention}", embed=final_embed
+    )
+
+
+# Función para calcular los segundos según la unidad (s, m, h, d)
+def parse_duration(time_str: str):
+  match = re.match(r"^(\d+)([smhd])$", time_str.lower())
+  if not match:
+    return None
+  amount, unit = match.groups()
+  multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+  return int(amount) * multipliers[unit]
+
+
+@bot.command(name="Z6", aliases=["z6"])
+async def z6(ctx, subcommand: str = None, time_str: str = None, *, reason=None):
+  if not subcommand or subcommand.lower() != "rm":
+    return
+
+  if not time_str:
+    embed_error = discord.Embed(
+        title="❌ Error de uso",
+        description=(
+            "Debes especificar un tiempo.\nEjemplo: `Z6 rm 1h Estudiar matemáticas`"
+        ),
+        color=discord.Color.red(),
+    )
+    await ctx.send(embed=embed_error)
+    return
+
+  seconds = parse_duration(time_str)
+  if not seconds:
+    embed_error = discord.Embed(
+        title="❌ Tiempo inválido",
+        description=(
+            "Usa un formato correcto (`s`, `m`, `h`, `d`).\nEjemplo: `30s`,"
+            " `10m`, `1h`, `2d`"
+        ),
+        color=discord.Color.red(),
+    )
+    await ctx.send(embed=embed_error)
+    return
+
+  future_time = datetime.now() + timedelta(seconds=seconds)
+  timestamp = int(future_time.timestamp())
+
+  setup_embed = discord.Embed(
+      title="⏰ ¡Recordatorio Establecido!",
+      description=(
+          f"📅 **Termina el:** <t:{timestamp}:F>\n⏳ **Faltan:**"
+          f" <t:{timestamp}:R>"
+      ),
+      color=discord.Color.green(),
+  )
+
+  view = RepeatView(seconds, reason)
+  await ctx.send(
+      content=f"{ctx.author.mention} (Recordatorio guardado)",
+      embed=setup_embed,
+      view=view,
+  )
+
+  await asyncio.sleep(seconds)
+
+  if reason:
+    reason_text = f"**Razón:** {reason}"
+  else:
+    reason_text = (
+        "**Razón:** No me dijiste una razón por la cuál debía recordarte"
+    )
+
+  final_embed = discord.Embed(
+      title="🔔 ¡Recordatorio Finalizado!",
+      description=reason_text,
+      color=discord.Color.orange(),
+  )
+
+  await ctx.send(content=f"{ctx.author.mention}", embed=final_embed)
+             
 
 # ==================== COMANDO /mensaje ====================
 
