@@ -152,15 +152,13 @@ async def on_message(message):
                 await message.reply(texto_respuesta)
 
     # --- 4. TUS RESPUESTAS AUTOMÁTICAS ---
-    archivo = "respuestas_automáticas.json"
-    
-    if os.path.exists(archivo):
-    with open(archivo, "r", encoding="utf-8") as f:
-        try:
-            datos = json.load(f)
-        except json.JSONDecodeError:
-            datos = {}
-
+     if os.path.exists(archivo):
+         with open(archivo, "r", encoding="utf-8") as f:
+             try:
+                 datos = json.load(f)
+             except json.JSONDecodeError:
+                 datos = {}
+            
     guild_id = str(message.guild.id)
     if guild_id in datos:
         activador = message.content.strip()
@@ -185,7 +183,6 @@ async def on_message(message):
             if tiene_permiso or message.author.guild_permissions.administrator:
                 await message.channel.send(mensaje_respuesta)
                 
-    
     # --- 5. COMANDO INTELIGENTE (MENCIÓN + REPLY + IMÁGENES + HISTORIAL DE 3 MENSAJES + 1 PALABRA DE HUMOR) ---
     if bot.user in message.mentions:
         pregunta = message.content
