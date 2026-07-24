@@ -332,10 +332,11 @@ def parse_duration(time_str: str):
   return int(amount) * multipliers[unit]
 
 
-@bot.command(name="Z6", aliases=["z6"])
+@bot.command(name="Z6")
 async def z6(ctx, subcommand: str = None, time_str: str = None, *, reason=None):
   if not subcommand or subcommand.lower() != "rm":
     return
+      
 
   if not time_str:
     embed_error = discord.Embed(
