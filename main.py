@@ -403,7 +403,7 @@ class SeleccionRolesView(View):
         self.mensaje = mensaje
 
     # Menú de selección múltiple de roles
-    @discord.ui.select(cls=RoleSelect, placeholder="Selecciona los roles permitidos...", min_values=1, max_values=10)
+    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Selecciona los roles permitidos...", min_values=1, max_values=10)
     async def select_roles(self, interaction: discord.Interaction, select: RoleSelect):
         # Extraemos los IDs de los roles seleccionados
         roles_ids = [role.id for role in select.values]
