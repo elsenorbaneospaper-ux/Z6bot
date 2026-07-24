@@ -276,7 +276,7 @@ async def on_message(message):
     # --- 6. PROCESAR COMANDOS TRADICIONALES ---
     await bot.process_commands(message)
 
-# Vista interactiva para el botón de repetir
+# Vista interactiva para el botón de repetir (va en el mensaje final)
 class RepeatView(discord.ui.View):
 
   def __init__(self, duration_seconds: int, reason: str):
@@ -309,7 +309,6 @@ class RepeatView(discord.ui.View):
     await interaction.response.send_message(
         content=f"{interaction.user.mention} (Recordatorio repetido)",
         embed=embed,
-        view=RepeatView(self.duration_seconds, self.reason),
     )
 
     await asyncio.sleep(self.duration_seconds)
@@ -319,8 +318,10 @@ class RepeatView(discord.ui.View):
         description=reason_text,
         color=discord.Color.gold(),
     )
+    # Aquí también se incluye la vista en el mensaje final repetido
+    view = RepeatView(self.duration_seconds, self.reason)
     await interaction.followup.send(
-        content=f"{interaction.user.mention}", embed=final_embed
+        content=f"{interaction.user.mention}", embed=final_embed, view=view
     )
 
 
@@ -334,17 +335,14 @@ def parse_duration(time_str: str):
   return int(amount) * multipliers[unit]
 
 
-@bot.command(name="Z6")
-async def z6(ctx, subcommand: str = None, time_str: str = None, *, reason=None):
-  if not subcommand or subcommand.lower() != "rm":
-    return
-      
-
+# Comando configurado directamente como 'rm' para usar con tu prefijo (ej. ;rm)
+@bot.command(name="rm")
+async def rm(ctx, time_str: str = None, *, reason=None):
   if not time_str:
     embed_error = discord.Embed(
         title="❌ Error de uso",
         description=(
-            "Debes especificar un tiempo.\nEjemplo: `Z6 rm 1h Estudiar matemáticas`"
+            "Debes especificar un tiempo.\nEjemplo: `;rm 1h Estudiar matemáticas`"
         ),
         color=discord.Color.red(),
     )
@@ -376,11 +374,9 @@ async def z6(ctx, subcommand: str = None, time_str: str = None, *, reason=None):
       color=discord.Color.green(),
   )
 
-  view = RepeatView(seconds, reason)
+  # Mensaje inicial SIN el botón de repetir
   await ctx.send(
-      content=f"{ctx.author.mention} (Recordatorio guardado)",
-      embed=setup_embed,
-      view=view,
+      content=f"{ctx.author.mention} (Recordatorio guardado)", embed=setup_embed
   )
 
   await asyncio.sleep(seconds)
@@ -398,7 +394,12 @@ async def z6(ctx, subcommand: str = None, time_str: str = None, *, reason=None):
       color=discord.Color.orange(),
   )
 
-  await ctx.send(content=f"{ctx.author.mention}", embed=final_embed)
+  # Creamos la vista con el botón para adjuntarla al mensaje final
+  view = RepeatView(seconds, reason)
+  await ctx.send(
+      content=f"{ctx.author.mention}", embed=final_embed, view=view
+    )
+    
              
 
 # ==================== COMANDO /mensaje ====================
