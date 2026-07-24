@@ -16,12 +16,15 @@ from deep_translator import GoogleTranslator
 from discord.ui import View, Select, Button
 import re
 from datetime import datetime, timedelta
-
+from supabase import create_client, Client
 
 # Cargar variables de entorno
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Inicializar bot de Discord
 intents = discord.Intents.default()
 intents.message_content = True
@@ -32,23 +35,28 @@ bot = commands.Bot(command_prefix=";", intents=intents, case_insensitive=True)
 # Inicializar Flask
 app = Flask(__name__)
 
-# Archivo de respuestas automáticas
-RESPUESTAS_FILE = 'respuestas_automáticas.json'
+# Funciones para manejar respuestas automáticas en la nube con Supabase
 
-def cargar_respuestas():
-    """Carga las respuestas automáticas desde el archivo JSON"""
-    if os.path.exists(RESPUESTAS_FILE):
-        with open(RESPUESTAS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+def cargar_respuestas_guild(guild_id: str):
+    """Carga las respuestas de un servidor específico desde Supabase"""
+    try:
+        response = supabase.table("respuestas_guilds").select("datos").eq("guild_id", str(guild_id)).execute()
+        if response.data:
+            return response.data[0]["datos"]
+    except Exception as e:
+        print(f"❌ Error al cargar de Supabase: {e}")
     return {}
 
-def guardar_respuestas(respuestas):
-    """Guarda las respuestas automáticas en el archivo JSON"""
-    with open(RESPUESTAS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(respuestas, f, indent=4, ensure_ascii=False)
-
-archivo = "respuestas_automáticas.json"
-datos = {}
+def guardar_respuestas_guild(guild_id: str, datos: dict):
+    """Guarda o actualiza las respuestas de un servidor en Supabase"""
+    try:
+        supabase.table("respuestas_guilds").upsert({
+            "guild_id": str(guild_id),
+            "datos": datos
+        }).execute()
+    except Exception as e:
+        print(f"❌ Error al guardar en Supabase: {e}")
+        
 
 # Mapeo de colores
 COLORES = {
@@ -68,63 +76,94 @@ async def on_ready():
     except Exception as e:
         print(f'❌ Error al sincronizar comandos: {e}')
 
+# ==========================================
+# GESTIÓN DE SUPABASE (Respuestas y AFK)
+# ==========================================
 
-# Carga los datos AFK al inicio de tu archivo
-AFK_FILE = "afk.json"
-
-def cargar_afk():
-    if os.path.exists(AFK_FILE):
-        with open(AFK_FILE, "r", encoding="utf-8") as f:
-            try:
-                return {int(k): v for k, v in json.load(f).items()}
-            except:
-                return {}
+def cargar_respuestas_guild(guild_id: str):
+    """Carga las respuestas de un servidor específico desde Supabase"""
+    try:
+        response = supabase.table("respuestas_guilds").select("datos").eq("guild_id", str(guild_id)).execute()
+        if response.data:
+            return response.data[0]["datos"]
+    except Exception as e:
+        print(f"❌ Error al cargar respuestas de Supabase: {e}")
     return {}
 
-def guardar_afk(data):
-    with open(AFK_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+def guardar_respuestas_guild(guild_id: str, datos: dict):
+    """Guarda o actualiza las respuestas de un servidor en Supabase"""
+    try:
+        supabase.table("respuestas_guilds").upsert({
+            "guild_id": str(guild_id),
+            "datos": datos
+        }).execute()
+    except Exception as e:
+        print(f"❌ Error al guardar respuestas en Supabase: {e}")
 
-afk_users = cargar_afk()
+def cargar_afk_guild(guild_id: str):
+    """Carga los usuarios AFK de un servidor desde Supabase"""
+    try:
+        response = supabase.table("afk_guilds").select("datos").eq("guild_id", str(guild_id)).execute()
+        if response.data:
+            return {int(k): v for k, v in response.data[0]["datos"].items()}
+    except Exception as e:
+        print(f"❌ Error al cargar AFK de Supabase: {e}")
+    return {}
 
-# ÚNICO EVENTO ON_MESSAGE
+def guardar_afk_guild(guild_id: str, datos: dict):
+    """Guarda o actualiza los usuarios AFK de un servidor en Supabase"""
+    try:
+        supabase.table("afk_guilds").upsert({
+            "guild_id": str(guild_id),
+            "datos": datos
+        }).execute()
+    except Exception as e:
+        print(f"❌ Error al guardar AFK en Supabase: {e}")
+
+
+# ==========================================
+# EVENTO ON_MESSAGE (AFK, Comando Z6 y Respuestas)
+# ==========================================
+
 @bot.event
 async def on_message(message):
-    global datos
     if message.author.bot:
         return
 
-    # --- 1. SI EL USUARIO AFK ESCRIBE, SE LE QUITA EL ESTADO ---
+    guild_id = str(message.guild.id)
+    afk_users = cargar_afk_guild(guild_id)
+
+    # 1. SI EL USUARIO AFK ESCRIBE, SE LE QUITA EL ESTADO
     if message.author.id in afk_users:
         del afk_users[message.author.id]
-        guardar_afk(afk_users)
+        guardar_afk_guild(guild_id, afk_users)
         try:
-            await message.channel.send(f"🎉 ¡Bienvenido de vuelta, {message.author.mention}! Ya te he retirado el estado AFK. 🚀")
+            await message.channel.send(f"👋 ¡Bienvenido de vuelta, {message.author.mention}! Ya te he retirado el estado AFK.")
         except discord.HTTPException:
             pass
 
-    # --- 2. COMANDO AFK (Usa EMBED y REPLY) ---
+    # 2. COMANDO AFK (Con prefijo z6)
     contenido_lower = message.content.lower()
-    if contenido_lower.startswith("z6 afk"):
+    if contenido_lower.startswith(";z6 afk"):
         partes = message.content.split(" ", 2)
         razon = partes[2] if len(partes) > 2 else "Sin razón especificada"
-        
+
         afk_users[message.author.id] = razon
-        guardar_afk(afk_users)
-        
+        guardar_afk_guild(guild_id, afk_users)
+
         # Creamos el Embed decorado para la activación
         embed_afk = discord.Embed(
             title="💤 ¡Modo AFK Activado!",
-            description=f"Te has puesto ausente correctamente.",
+            description="Te has puesto ausente correctamente.",
             color=discord.Color.orange()
         )
         embed_afk.add_field(name="📌 Razón", value=razon, inline=False)
         embed_afk.set_footer(text="⚡ Se te quitará el estado en cuanto escribas un mensaje.")
-        
+
         await message.reply(embed=embed_afk)
         return
 
-    # --- 3. DETECTAR MENCIONES Y CONEXIONES (Mensaje normal con emojis) ---
+    # 3. DETECTAR MENCIONES Y CONEXIONES (Usuarios AFK mencionados)
     if message.mentions:
         for user in message.mentions:
             if user.id in afk_users:
@@ -133,13 +172,13 @@ async def on_message(message):
                 accion_extra = None
                 for activity in user.activities:
                     if isinstance(activity, discord.Spotify):
-                        accion_extra = f"🎧 Escuchando **{activity.title}** de *{', '.join(activity.artists)}* en Spotify"
+                        accion_extra = f"🎧 Escuchando **{activity.title}** de `{', '.join(activity.artists)}` en Spotify"
                         break
                     elif activity.type == discord.ActivityType.playing:
                         accion_extra = f"🎮 Jugando a **{activity.name}**"
                         break
                     elif activity.type == discord.ActivityType.streaming:
-                        accion_extra = f"📺 Transmitiendo en directo: **{activity.name}**"
+                        accion_extra = f"💻 Transmitiendo en directo: **{activity.name}**"
                         break
                     elif activity.type == discord.ActivityType.listening:
                         accion_extra = f"🎵 Escuchando **{activity.name}**"
@@ -148,45 +187,35 @@ async def on_message(message):
                         accion_extra = f"✨ Actividad: **{activity.name}**"
                         break
 
-                # Mensaje normal con emojis para las menciones
-                texto_respuesta = f"⚠️ **{user.mention} se encuentra AFK en este momento.**\n> 📌 **Razón:** {razon}"
+                texto_respuesta = f"⚠️ **{user.mention}** se encuentra AFK en este momento.\n📌 **Razón:** {razon}"
                 if accion_extra:
-                    texto_respuesta += f"\n> {accion_extra}"
+                    texto_respuesta += f"\n{accion_extra}"
 
                 await message.reply(texto_respuesta)
 
-    # --- 4. TUS RESPUESTAS AUTOMÁTICAS ---
-    if os.path.exists(archivo):
-        with open(archivo, "r", encoding="utf-8") as f: 
-            try: 
-                datos = json.load(f)
-            except json.JSONDecodeError:
-                datos = {}
-            
-    guild_id = str(message.guild.id)
-    if guild_id in datos:
+    # 4. TUS RESPUESTAS AUTOMÁTICAS DESDE SUPABASE
+    datos_guild = cargar_respuestas_guild(guild_id)
+
+    if datos_guild:
         activador = message.content.strip()
-        if activador in datos[guild_id]:
-            config_respuesta = datos[guild_id][activador]
-            
-            # Extraemos los datos de la nueva estructura
+        if activador in datos_guild:
+            config_respuesta = datos_guild[activador]
             mensaje_respuesta = config_respuesta["respuesta"]
             roles_permitidos = config_respuesta["roles"]
             
-            # Validar permisos
             tiene_permiso = False
             if roles_permitidos == "todos":
                 tiene_permiso = True
             else:
-                # Comprobamos si alguno de los roles del usuario está en la lista
                 user_role_ids = [r.id for r in message.author.roles]
                 if any(rol_id in user_role_ids for rol_id in roles_permitidos):
                     tiene_permiso = True
                     
-            # Si tiene permisos (o es administrador del servidor por seguridad)
             if tiene_permiso or message.author.guild_permissions.administrator:
                 await message.channel.send(mensaje_respuesta)
-                
+
+
+
     # --- 5. COMANDO INTELIGENTE (MENCIÓN + REPLY + IMÁGENES + HISTORIAL DE 3 MENSAJES + 1 PALABRA DE HUMOR) ---
     if bot.user in message.mentions:
         pregunta = message.content
@@ -523,99 +552,10 @@ async def mensaje_o_embed_error(interaction: Interaction, error: app_commands.Ap
         )
         
 
-# ================================================
-# 1. Vista de Selección de Roles
-# ================================================
-class SeleccionRolesView(View):
-    def __init__(self, activador: str, mensaje: str):
-        super().__init__(timeout=180)
-        self.activador = activador
-        self.mensaje = mensaje
+# ========================================================
+# COMANDO SLASH /VERTEXTO Y SUS VISTAS (SUPABASE)
+# ========================================================
 
-    # Menú de selección múltiple de roles
-    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Selecciona los roles permitidos...", min_values=1, max_values=10)
-    async def select_roles(self, interaction: discord.Interaction, select: RoleSelect):
-        # Extraemos los IDs de los roles seleccionados
-        roles_ids = [role.id for role in select.values]
-        await self.guardar_datos_permanentes(interaction, roles_ids)
-
-    # Botón para permitir a todos
-    @discord.ui.button(label="Todos", style=discord.ButtonStyle.success, emoji="🌍")
-    async def btn_todos(self, interaction: discord.Interaction, button: Button):
-        await self.guardar_datos_permanentes(interaction, "todos")
-
-    async def guardar_datos_permanentes(self, interaction: discord.Interaction, roles_permitidos):
-        guild_id = str(interaction.guild_id)
-        
-        # Cargar datos actuales
-        if os.path.exists(archivo):
-            with open(archivo, "r", encoding="utf-8") as f:
-                try:
-                    datos = json.load(f)
-                except json.JSONDecodeError:
-                    datos = {}
-        else:
-            datos = {}
-            
-        if guild_id not in datos:
-            datos[guild_id] = {}
-            
-        # Guardamos el mensaje y los roles permitidos permanentemente
-        datos[guild_id][self.activador] = {
-            "respuesta": self.mensaje,
-            "roles": roles_permitidos
-        }
-        
-        # Escribir al JSON
-        with open(archivo, "w", encoding="utf-8") as f:
-            json.dump(datos, f, indent=4, ensure_ascii=False)
-            
-        # Mensaje final
-        if roles_permitidos == "todos":
-            rol_msg = "Todos los miembros"
-        else:
-            rol_msg = f"{len(roles_permitidos)} rol(es) seleccionado(s)"
-
-        await interaction.response.edit_message(
-            content=f"✅ **¡Respuesta guardada permanentemente!**\n**Activador:** `{self.activador}`\n**Permisos:** {rol_msg}",
-            view=None # Quitamos los botones y el select
-        )
-
-
-# ================================================
-# 2. El Formulario (Modal) Actualizado
-# ================================================
-class ModalGuardarTexto(Modal, title="Guardar Nueva Respuesta"):
-    activador = TextInput(
-        label="Activador (palabra clave)",
-        placeholder="Ej: !hola o hola",
-        style=discord.TextStyle.short,
-        required=True
-    )
-    
-    mensaje = TextInput(
-        label="Mensaje a guardar",
-        placeholder="Escribe aquí el texto que responderá el bot...",
-        style=discord.TextStyle.paragraph,
-        required=True
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        act = self.activador.value
-        msg = self.mensaje.value
-        
-        # En lugar de guardar inmediatamente, llamamos a la vista de roles
-        view = SeleccionRolesView(activador=act, mensaje=msg)
-        
-        await interaction.response.send_message(
-            f"El texto para **`{act}`** está casi listo.\n\n👇 **Por favor, selecciona qué roles pueden usar este comando, o pulsa 'Todos':**",
-            view=view,
-            ephemeral=True
-        )
-        
-# ================================================
-# 1. Vista con los botones (Borrar, Editar, Cancelar)
-# ================================================
 class AccionesTextoView(View):
     def __init__(self, activador: str, mensaje_actual: str):
         super().__init__(timeout=180)
@@ -625,47 +565,34 @@ class AccionesTextoView(View):
     @discord.ui.button(label="Borrar", style=discord.ButtonStyle.danger, emoji="🗑️")
     async def borrar_btn(self, interaction: discord.Interaction, button: Button):
         guild_id = str(interaction.guild_id)
-        
-        if os.path.exists(archivo):
-            with open(archivo, "r", encoding="utf-8") as f:
-                try:
-                    datos = json.load(f)
-                except json.JSONDecodeError:
-                    datos = {}
+        datos_guild = cargar_respuestas_guild(guild_id)
 
-            if guild_id in datos and self.activador in datos[guild_id]:
-                del datos[guild_id][self.activador]
-                
-                # Guardar cambios
-                with open(archivo, "w", encoding="utf-8") as f:
-                    json.dump(datos, f, indent=4, ensure_ascii=False)
-                
-                await interaction.response.edit_message(
-                    content=f"❌ El texto con activador **`{self.activador}`** ha sido borrado exitosamente.",
-                    view=None
-                )
-                return
+        if datos_guild and self.activador in datos_guild:
+            del datos_guild[self.activador]
+            guardar_respuestas_guild(guild_id, datos_guild)
+
+            await interaction.response.edit_message(
+                content=f"❌ El texto con activador **`{self.activador}`** ha sido borrado exitosamente.",
+                view=None
+            )
+            return
 
         await interaction.response.edit_message(content="❌ No se encontró el texto para borrar.", view=None)
 
     @discord.ui.button(label="Editar", style=discord.ButtonStyle.primary, emoji="✏️")
     async def editar_btn(self, interaction: discord.Interaction, button: Button):
-        # Abre el modal para editar el mensaje existente
         await interaction.response.send_modal(ModalEditarTexto(self.activador, self.mensaje_actual))
 
-    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="✖️")
+    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="❌")
     async def cancelar_btn(self, interaction: discord.Interaction, button: Button):
         await interaction.response.edit_message(content="Operación cancelada.", view=None)
 
 
-# ================================================
-# 2. Modal para la edición del texto
-# ================================================
 class ModalEditarTexto(discord.ui.Modal, title="Editar Respuesta Automática"):
     def __init__(self, activador: str, mensaje_actual: str):
         super().__init__()
         self.activador = activador
-
+        
         self.nuevo_mensaje = discord.ui.TextInput(
             label="Nuevo Mensaje",
             style=discord.TextStyle.paragraph,
@@ -678,18 +605,16 @@ class ModalEditarTexto(discord.ui.Modal, title="Editar Respuesta Automática"):
         guild_id = str(interaction.guild_id)
         nuevo_texto = self.nuevo_mensaje.value
 
-        if os.path.exists(archivo):
-            with open(archivo, "r", encoding="utf-8") as f:
-                try:
-                    datos = json.load(f)
-                except json.JSONDecodeError:
-                    datos = {}
+        try:
+            datos_guild = cargar_respuestas_guild(guild_id)
+            
+            if guild_id and self.activador in datos_guild:
+                if isinstance(datos_guild[self.activador], dict):
+                    datos_guild[self.activador]["respuesta"] = nuevo_texto
+                else:
+                    datos_guild[self.activador] = {"respuesta": nuevo_texto, "roles": "todos"}
 
-            if guild_id in datos and self.activador in datos[guild_id]:
-                datos[guild_id][self.activador] = nuevo_texto
-
-                with open(archivo, "w", encoding="utf-8") as f:
-                    json.dump(datos, f, indent=4, ensure_ascii=False)
+                guardar_respuestas_guild(guild_id, datos_guild)
 
                 await interaction.response.send_message(
                     f"✅ El texto para **`{self.activador}`** ha sido actualizado exitosamente.",
@@ -697,16 +622,14 @@ class ModalEditarTexto(discord.ui.Modal, title="Editar Respuesta Automática"):
                 )
                 return
 
-        await interaction.response.send_message("❌ Error al actualizar el texto.", ephemeral=True)
+            await interaction.response.send_message("❌ Error: No se encontró el activador en este servidor.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error al actualizar el texto: `{e}`", ephemeral=True)
 
 
-# ================================================
-# 3. Menú de selección (Dropdown) de los textos
-# ================================================
 class SeleccionTextoSelect(Select):
     def __init__(self, textos_dict: dict):
         options = []
-        # Llenamos el selector con los activadores guardados (máximo 25 por límite de Discord)
         for act in list(textos_dict.keys())[:25]:
             options.append(discord.SelectOption(label=act, description=f"Ver respuesta para: {act}"))
 
@@ -715,7 +638,9 @@ class SeleccionTextoSelect(Select):
 
     async def callback(self, interaction: discord.Interaction):
         activador_seleccionado = self.values[0]
-        mensaje_guardado = self.textos_dict.get(activador_seleccionado, "Sin contenido")
+        config_guardada = self.textos_dict.get(activador_seleccionado, "Sin contenido")
+        
+        mensaje_guardado = config_guardada.get("respuesta", config_guardada) if isinstance(config_guardada, dict) else str(config_guardada)
 
         view = AccionesTextoView(activador_seleccionado, mensaje_guardado)
         await interaction.response.edit_message(
@@ -730,78 +655,75 @@ class VerTextoView(View):
         self.add_item(SeleccionTextoSelect(textos_dict))
 
 
-# ================================================
-# 4. Comando Slash /vertexto
-# ================================================
-@bot.tree.command(name="vertexto", description="Muestra una lista de los textos guardados para gestionarlos")
+@bot.tree.command(name="vertexto", description="Muestra una lista con los textos guardados para gestionarlos")
 @app_commands.checks.has_permissions(administrator=True)
 async def vertexto(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    
     guild_id = str(interaction.guild_id)
 
     try:
-        if not os.path.exists(archivo):
-            await interaction.followup.send("⚠️ No existe el archivo de respuestas.", ephemeral=True)
-            return
-
-        with open(archivo, "r", encoding="utf-8") as f:
-            datos = json.load(f)
-
-        textos_servidor = datos.get(guild_id, {})
+        textos_servidor = cargar_respuestas_guild(guild_id)
 
         if not textos_servidor:
             await interaction.followup.send("⚠️ No hay textos guardados en este servidor.", ephemeral=True)
             return
 
-        # Limitar estrictamente a 25 opciones para evitar errores de Discord
-        options = []
-        for act in list(textos_servidor.keys())[:25]:
-            # Asegurarnos de que el activador y descripción sean strings válidos
-            label_str = str(act)[:100]  # Límite de Discord para labels
-            options.append(discord.SelectOption(label=label_str, description=f"Gestionar: {label_str}"))
-
-        class SelectRapido(Select):
-            def __init__(self, t_dict):
-                super().__init__(placeholder="Elige un texto...", min_values=1, max_values=1, options=options)
-                self.t_dict = t_dict
-
-            async def callback(self, inter: discord.Interaction):
-                sel = self.values[0]
-                msg = self.t_dict.get(sel, "Sin contenido")
-                view = AccionesTextoView(sel, msg)
-                await inter.response.edit_message(
-                    content=f"📝 **Activador:** `{sel}`\n\n**Mensaje:**\n{msg}",
-                    view=view
-                )
-
-        class ViewRapida(View):
-            def __init__(self, t_dict):
-                super().__init__(timeout=180)
-                self.add_item(SelectRapido(t_dict))
-
-        view = ViewRapida(textos_servidor)
+        view = VerTextoView(textos_servidor)
         await interaction.followup.send("Selecciona de la lista el texto que deseas ver o administrar:", view=view, ephemeral=True)
 
     except Exception as e:
         await interaction.followup.send(f"❌ Ocurrió un error al leer los textos: `{e}`", ephemeral=True)
-        
+                
 
-# 2. El Comando Slash con restricción de Administrador
+
+# ========================================================
+# COMANDO SLASH /SAVETEXTO Y SU MODAL
+# ========================================================
+
+class ModalGuardarTexto(discord.ui.Modal, title="Guardar Nueva Respuesta"):
+    activador = discord.ui.TextInput(
+        label="Activador (palabra clave)",
+        placeholder="Ej: hola o !ayuda",
+        style=discord.TextStyle.short,
+        required=True
+    )
+    
+    mensaje = discord.ui.TextInput(
+        label="Mensaje a guardar",
+        placeholder="Escribe aquí el texto que responderá el bot...",
+        style=discord.TextStyle.paragraph,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        act = self.activador.value
+        nsg = self.mensaje.value
+
+        # Llama a la vista de selección de roles para continuar el proceso
+        view = SeleccionRolesView(activador=act, mensaje=nsg)
+
+        await interaction.response.send_message(
+            f"✅ El texto para **`{act}`** está casi listo.\n\n📌 **Por favor, selecciona qué roles pueden usar este comando:**",
+            view=view,
+            ephemeral=True
+        )
+
+
 @bot.tree.command(name="savetexto", description="Guarda un texto personalizado asociado a un activador")
 @app_commands.checks.has_permissions(administrator=True)
 async def savetexto(interaction: discord.Interaction):
     modal = ModalGuardarTexto()
     await interaction.response.send_modal(modal)
 
-# 3. Manejador de errores por si alguien sin permisos intenta usarlo
+
 @savetexto.error
 async def savetexto_error(interaction: discord.Interaction, error):
     if isinstance(error, app_commands.errors.MissingPermissions):
         await interaction.response.send_message(
-            "❌ No tienes permisos de **Administrador** para usar este comando.", 
+            "❌ No tienes permisos de **Administrador** para usar este comando.",
             ephemeral=True
-        )
+    )
+        
         
 
 
