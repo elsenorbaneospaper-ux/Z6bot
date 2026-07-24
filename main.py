@@ -128,7 +128,7 @@ def guardar_afk_guild(guild_id: str, datos: dict):
 @bot.event
 async def on_message(message):
     if message.author.bot:
-        return
+        
 
     guild_id = str(message.guild.id)
     afk_users = cargar_afk_guild(guild_id)
