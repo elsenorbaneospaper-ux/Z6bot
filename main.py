@@ -196,16 +196,12 @@ async def on_message(message):
 datos_guild = cargar_respuestas_guild(guild_id)
 
 if datos_guild:
-    # Limpiamos el mensaje del usuario para compararlo exacto
     contenido_mensaje = message.content.strip().lower()
     print(f"DEBUG - Guild ID: {guild_id}")
     print(f"DEBUG - Datos cargados de Supabase: {datos_guild}")
     print(f"DEBUG - Mensaje escrito: {repr(message.content)}")
 
-    
-    # Recorremos los activadores guardados
     for activador, config_respuesta in datos_guild.items():
-        # Verificamos si el mensaje es exactamente igual al activador
         if contenido_mensaje == activador.strip().lower():
             mensaje_respuesta = config_respuesta["respuesta"]
             roles_permitidos = config_respuesta["roles"]
@@ -221,6 +217,7 @@ if datos_guild:
             if tiene_permiso or message.author.guild_permissions.administrator:
                 await message.channel.send(mensaje_respuesta)
             break
+             
             
             
         
