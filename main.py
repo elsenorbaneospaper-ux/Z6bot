@@ -13,6 +13,7 @@ import difflib
 import unicodedata
 from groq import Groq
 from deep_translator import GoogleTranslator
+from discord.ui import View, Select, Button
 
 
 # Cargar variables de entorno
@@ -430,6 +431,157 @@ class ModalGuardarTexto(discord.ui.Modal, title="Guardar Nueva Respuesta"):
             ephemeral=True
         )
 
+# ================================================
+# 1. Vista con los botones (Borrar, Editar, Cancelar)
+# ================================================
+class AccionesTextoView(View):
+    def __init__(self, activador: str, mensaje_actual: str):
+        super().__init__(timeout=180)
+        self.activador = activador
+        self.mensaje_actual = mensaje_actual
+
+    @discord.ui.button(label="Borrar", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def borrar_btn(self, interaction: discord.Interaction, button: Button):
+        guild_id = str(interaction.guild_id)
+        
+        if os.path.exists(archivo):
+            with open(archivo, "r", encoding="utf-8") as f:
+                try:
+                    datos = json.load(f)
+                except json.JSONDecodeError:
+                    datos = {}
+
+            if guild_id in datos and self.activador in datos[guild_id]:
+                del datos[guild_id][self.activador]
+                
+                # Guardar cambios
+                with open(archivo, "w", encoding="utf-8") as f:
+                    json.dump(datos, f, indent=4, ensure_ascii=False)
+                
+                await interaction.response.edit_message(
+                    content=f"❌ El texto con activador **`{self.activador}`** ha sido borrado exitosamente.",
+                    view=None
+                )
+                return
+
+        await interaction.response.edit_message(content="❌ No se encontró el texto para borrar.", view=None)
+
+    @discord.ui.button(label="Editar", style=discord.ButtonStyle.primary, emoji="✏️")
+    async def editar_btn(self, interaction: discord.Interaction, button: Button):
+        # Abre el modal para editar el mensaje existente
+        await interaction.response.send_modal(ModalEditarTexto(self.activador, self.mensaje_actual))
+
+    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="✖️")
+    async def cancelar_btn(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.edit_message(content="Operación cancelada.", view=None)
+
+
+# ================================================
+# 2. Modal para la edición del texto
+# ================================================
+class ModalEditarTexto(discord.ui.Modal, title="Editar Respuesta Automática"):
+    def __init__(self, activador: str, mensaje_actual: str):
+        super().__init__()
+        self.activador = activador
+
+        self.nuevo_mensaje = discord.ui.TextInput(
+            label="Nuevo Mensaje",
+            style=discord.TextStyle.paragraph,
+            default=mensaje_actual,
+            required=True
+        )
+        self.add_item(self.nuevo_mensaje)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        guild_id = str(interaction.guild_id)
+        nuevo_texto = self.nuevo_mensaje.value
+
+        if os.path.exists(archivo):
+            with open(archivo, "r", encoding="utf-8") as f:
+                try:
+                    datos = json.load(f)
+                except json.JSONDecodeError:
+                    datos = {}
+
+            if guild_id in datos and self.activador in datos[guild_id]:
+                datos[guild_id][self.activador] = nuevo_texto
+
+                with open(archivo, "w", encoding="utf-8") as f:
+                    json.dump(datos, f, indent=4, ensure_ascii=False)
+
+                await interaction.response.send_message(
+                    f"✅ El texto para **`{self.activador}`** ha sido actualizado exitosamente.",
+                    ephemeral=True
+                )
+                return
+
+        await interaction.response.send_message("❌ Error al actualizar el texto.", ephemeral=True)
+
+
+# ================================================
+# 3. Menú de selección (Dropdown) de los textos
+# ================================================
+class SeleccionTextoSelect(Select):
+    def __init__(self, textos_dict: dict):
+        options = []
+        # Llenamos el selector con los activadores guardados (máximo 25 por límite de Discord)
+        for act in list(textos_dict.keys())[:25]:
+            options.append(discord.SelectOption(label=act, description=f"Ver respuesta para: {act}"))
+
+        super().__init__(placeholder="Elige un texto para gestionar...", min_values=1, max_values=1, options=options)
+        self.textos_dict = textos_dict
+
+    async def callback(self, interaction: discord.Interaction):
+        activador_seleccionado = self.values[0]
+        mensaje_guardado = self.textos_dict.get(activador_seleccionado, "Sin contenido")
+
+        view = AccionesTextoView(activador_seleccionado, mensaje_guardado)
+        await interaction.response.edit_message(
+            content=f"📝 **Activador:** `{activador_seleccionado}`\n\n**Mensaje:**\n{mensaje_guardado}",
+            view=view
+        )
+
+
+class VerTextoView(View):
+    def __init__(self, textos_dict: dict):
+        super().__init__(timeout=180)
+        self.add_item(SeleccionTextoSelect(textos_dict))
+
+
+# ================================================
+# 4. Comando Slash /vertexto
+# ================================================
+@bot.tree.command(name="vertexto", description="Muestra una lista de los textos guardados para gestionarlos")
+@app_commands.checks.has_permissions(administrator=True)
+async def vertexto(interaction: discord.Interaction):
+    guild_id = str(interaction.guild_id)
+
+    if not os.path.exists(archivo):
+        await interaction.response.send_message("⚠️ No hay ningún archivo de respuestas guardadas todavía.", ephemeral=True)
+        return
+
+    with open(archivo, "r", encoding="utf-8") as f:
+        try:
+            datos = json.load(f)
+        except json.JSONDecodeError:
+            datos = {}
+
+    textos_servidor = datos.get(guild_id, {})
+
+    if not textos_servidor:
+        await interaction.response.send_message("⚠️ No hay textos guardados en este servidor.", ephemeral=True)
+        return
+
+    view = VerTextoView(textos_servidor)
+    await interaction.response.send_message("Selecciona de la lista el texto que deseas ver o administrar:", view=view, ephemeral=True)
+
+
+# Manejador de errores para permisos de /vertexto
+@vertexto.error
+async def vertexto_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        await interaction.response.send_message("❌ No tienes permisos de **Administrador** para usar este comando.", ephemeral=True)
+            
 
 # 2. El Comando Slash con restricción de Administrador
 @bot.tree.command(name="savetexto", description="Guarda un texto personalizado asociado a un activador")
