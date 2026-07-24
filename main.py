@@ -28,7 +28,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Inicializar bot de Discord
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix=";", intents=intents, case_insensitive=True)
+bot = commands.Bot(command_prefix="?", intents=intents)
 
 
 
@@ -126,6 +126,7 @@ def guardar_afk_guild(guild_id: str, datos: dict):
 # ==========================================
 @bot.event
 async def on_message(message):
+    print(f"DEBUG GENERAL - Mensaje recibido de {message.author}: {repr(message.content)}")
     if message.author.bot:
         return
 
