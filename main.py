@@ -45,6 +45,8 @@ def guardar_respuestas(respuestas):
     with open(RESPUESTAS_FILE, 'w', encoding='utf-8') as f:
         json.dump(respuestas, f, indent=4, ensure_ascii=False)
 
+archivo = "respuestas_automáticas.json"
+
 # Mapeo de colores
 COLORES = {
     "verde": discord.Color.green(),
