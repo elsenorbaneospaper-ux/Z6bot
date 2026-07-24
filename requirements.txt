@@ -3,3 +3,4 @@ python-dotenv==1.0.1
 flask==3.0.0
 groq
 deep-translator
+supabase
