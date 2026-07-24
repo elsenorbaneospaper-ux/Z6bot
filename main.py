@@ -152,24 +152,39 @@ async def on_message(message):
                 await message.reply(texto_respuesta)
 
     # --- 4. TUS RESPUESTAS AUTOMÁTICAS ---
-    import json
-    import os
     archivo = "respuestas_automáticas.json"
-
+    
     if os.path.exists(archivo):
-        with open(archivo, "r", encoding="utf-8") as f:
-            try:
-                datos = json.load(f)
-            except json.JSONDecodeError:
-                datos = {}
+    with open(archivo, "r", encoding="utf-8") as f:
+        try:
+            datos = json.load(f)
+        except json.JSONDecodeError:
+            datos = {}
 
-        guild_id = str(message.guild.id)
-        if guild_id in datos:
-            activador = message.content.strip()
-            if activador in datos[guild_id]:
-                mensaje_respuesta = datos[guild_id][activador]
+    guild_id = str(message.guild.id)
+    if guild_id in datos:
+        activador = message.content.strip()
+        if activador in datos[guild_id]:
+            config_respuesta = datos[guild_id][activador]
+            
+            # Extraemos los datos de la nueva estructura
+            mensaje_respuesta = config_respuesta["respuesta"]
+            roles_permitidos = config_respuesta["roles"]
+            
+            # Validar permisos
+            tiene_permiso = False
+            if roles_permitidos == "todos":
+                tiene_permiso = True
+            else:
+                # Comprobamos si alguno de los roles del usuario está en la lista
+                user_role_ids = [r.id for r in message.author.roles]
+                if any(rol_id in user_role_ids for rol_id in roles_permitidos):
+                    tiene_permiso = True
+                    
+            # Si tiene permisos (o es administrador del servidor por seguridad)
+            if tiene_permiso or message.author.guild_permissions.administrator:
                 await message.channel.send(mensaje_respuesta)
-
+                
     
     # --- 5. COMANDO INTELIGENTE (MENCIÓN + REPLY + IMÁGENES + HISTORIAL DE 3 MENSAJES + 1 PALABRA DE HUMOR) ---
     if bot.user in message.mentions:
@@ -380,18 +395,78 @@ async def mensaje_o_embed_error(interaction: Interaction, error: app_commands.Ap
             ephemeral=True
         )
         
-# ==================== COMANDO /savetexto ====================
 
-# 1. El Formulario (Modal)
-class ModalGuardarTexto(discord.ui.Modal, title="Guardar Nueva Respuesta"):
-    activador = discord.ui.TextInput(
+# ================================================
+# 1. Vista de Selección de Roles
+# ================================================
+class SeleccionRolesView(View):
+    def __init__(self, activador: str, mensaje: str):
+        super().__init__(timeout=180)
+        self.activador = activador
+        self.mensaje = mensaje
+
+    # Menú de selección múltiple de roles
+    @discord.ui.select(cls=RoleSelect, placeholder="Selecciona los roles permitidos...", min_values=1, max_values=10)
+    async def select_roles(self, interaction: discord.Interaction, select: RoleSelect):
+        # Extraemos los IDs de los roles seleccionados
+        roles_ids = [role.id for role in select.values]
+        await self.guardar_datos_permanentes(interaction, roles_ids)
+
+    # Botón para permitir a todos
+    @discord.ui.button(label="Todos", style=discord.ButtonStyle.success, emoji="🌍")
+    async def btn_todos(self, interaction: discord.Interaction, button: Button):
+        await self.guardar_datos_permanentes(interaction, "todos")
+
+    async def guardar_datos_permanentes(self, interaction: discord.Interaction, roles_permitidos):
+        guild_id = str(interaction.guild_id)
+        
+        # Cargar datos actuales
+        if os.path.exists(archivo):
+            with open(archivo, "r", encoding="utf-8") as f:
+                try:
+                    datos = json.load(f)
+                except json.JSONDecodeError:
+                    datos = {}
+        else:
+            datos = {}
+            
+        if guild_id not in datos:
+            datos[guild_id] = {}
+            
+        # Guardamos el mensaje y los roles permitidos permanentemente
+        datos[guild_id][self.activador] = {
+            "respuesta": self.mensaje,
+            "roles": roles_permitidos
+        }
+        
+        # Escribir al JSON
+        with open(archivo, "w", encoding="utf-8") as f:
+            json.dump(datos, f, indent=4, ensure_ascii=False)
+            
+        # Mensaje final
+        if roles_permitidos == "todos":
+            rol_msg = "Todos los miembros"
+        else:
+            rol_msg = f"{len(roles_permitidos)} rol(es) seleccionado(s)"
+
+        await interaction.response.edit_message(
+            content=f"✅ **¡Respuesta guardada permanentemente!**\n**Activador:** `{self.activador}`\n**Permisos:** {rol_msg}",
+            view=None # Quitamos los botones y el select
+        )
+
+
+# ================================================
+# 2. El Formulario (Modal) Actualizado
+# ================================================
+class ModalGuardarTexto(Modal, title="Guardar Nueva Respuesta"):
+    activador = TextInput(
         label="Activador (palabra clave)",
         placeholder="Ej: !hola o hola",
         style=discord.TextStyle.short,
         required=True
     )
     
-    mensaje = discord.ui.TextInput(
+    mensaje = TextInput(
         label="Mensaje a guardar",
         placeholder="Escribe aquí el texto que responderá el bot...",
         style=discord.TextStyle.paragraph,
@@ -401,38 +476,16 @@ class ModalGuardarTexto(discord.ui.Modal, title="Guardar Nueva Respuesta"):
     async def on_submit(self, interaction: discord.Interaction):
         act = self.activador.value
         msg = self.mensaje.value
-        guild_id = str(interaction.guild.id)
-
-        import json
-        import os
-
-        archivo = "respuestas_automáticas.json"
         
-        # Cargar datos actuales o crear estructura vacía
-        if os.path.exists(archivo):
-            with open(archivo, "r", encoding="utf-8") as f:
-                try:
-                    datos = json.load(f)
-                except json.JSONDecodeError:
-                    datos = {}
-        else:
-            datos = {}
-
-        # Guardar / Actualizar por servidor (guild_id)
-        if guild_id not in datos:
-            datos[guild_id] = {}
+        # En lugar de guardar inmediatamente, llamamos a la vista de roles
+        view = SeleccionRolesView(activador=act, mensaje=msg)
         
-        datos[guild_id][act] = msg
-
-        # Escribir de vuelta al archivo JSON
-        with open(archivo, "w", encoding="utf-8") as f:
-            json.dump(datos, f, indent=4, ensure_ascii=False)
-
         await interaction.response.send_message(
-            f"¡Respuesta automática guardada exitosamente!\n> **Activador:** `{act}`\n> **Mensaje:** {msg}",
+            f"El texto para **`{act}`** está casi listo.\n\n👇 **Por favor, selecciona qué roles pueden usar este comando, o pulsa 'Todos':**",
+            view=view,
             ephemeral=True
         )
-
+        
 # ================================================
 # 1. Vista con los botones (Borrar, Editar, Cancelar)
 # ================================================
