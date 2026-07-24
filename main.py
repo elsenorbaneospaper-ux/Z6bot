@@ -194,18 +194,15 @@ async def on_message(message):
                 await message.reply(texto_respuesta)
 # 4. TUS RESPUESTAS AUTOMÁTICAS DESDE SUPABASE
 datos_guild = cargar_respuestas_guild(guild_id)
-
 if datos_guild:
     contenido_mensaje = message.content.strip().lower()
     print(f"DEBUG - Guild ID: {guild_id}")
     print(f"DEBUG - Datos cargados de Supabase: {datos_guild}")
     print(f"DEBUG - Mensaje escrito: {repr(message.content)}")
-
     for activador, config_respuesta in datos_guild.items():
         if contenido_mensaje == activador.strip().lower():
             mensaje_respuesta = config_respuesta["respuesta"]
             roles_permitidos = config_respuesta["roles"]
-
             tiene_permiso = False
             if roles_permitidos == "todos":
                 tiene_permiso = True
@@ -213,15 +210,10 @@ if datos_guild:
                 user_role_ids = [r.id for r in message.author.roles]
                 if any(rol_id in user_role_ids for rol_id in roles_permitidos):
                     tiene_permiso = True
-
             if tiene_permiso or message.author.guild_permissions.administrator:
                 await message.channel.send(mensaje_respuesta)
             break
-             
             
-            
-        
-
 
     # --- 5. COMANDO INTELIGENTE (MENCIÓN + REPLY + IMÁGENES + HISTORIAL DE 3 MENSAJES + 1 PALABRA DE HUMOR) ---
     if bot.user in message.mentions:
