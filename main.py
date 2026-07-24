@@ -554,39 +554,56 @@ class VerTextoView(View):
 @bot.tree.command(name="vertexto", description="Muestra una lista de los textos guardados para gestionarlos")
 @app_commands.checks.has_permissions(administrator=True)
 async def vertexto(interaction: discord.Interaction):
-    # 1. Diferimos la respuesta de inmediato para evitar el error de los 3 segundos
     await interaction.response.defer(ephemeral=True)
-
+    
     guild_id = str(interaction.guild_id)
 
-    if not os.path.exists(archivo):
-        await interaction.followup.send("⚠️ No hay ningún archivo de respuestas guardadas todavía.", ephemeral=True)
-        return
+    try:
+        if not os.path.exists(archivo):
+            await interaction.followup.send("⚠️ No existe el archivo de respuestas.", ephemeral=True)
+            return
 
-    with open(archivo, "r", encoding="utf-8") as f:
-        try:
+        with open(archivo, "r", encoding="utf-8") as f:
             datos = json.load(f)
-        except json.JSONDecodeError:
-            datos = {}
 
-    textos_servidor = datos.get(guild_id, {})
+        textos_servidor = datos.get(guild_id, {})
 
-    if not textos_servidor:
-        await interaction.followup.send("⚠️ No hay textos guardados en este servidor.", ephemeral=True)
-        return
+        if not textos_servidor:
+            await interaction.followup.send("⚠️ No hay textos guardados en este servidor.", ephemeral=True)
+            return
 
-    view = VerTextoView(textos_servidor)
-    
-    # 2. Usamos followup.send en lugar de interaction.response.send_message
-    await interaction.followup.send("Selecciona de la lista el texto que deseas ver o administrar:", view=view, ephemeral=True)
-    
+        # Limitar estrictamente a 25 opciones para evitar errores de Discord
+        options = []
+        for act in list(textos_servidor.keys())[:25]:
+            # Asegurarnos de que el activador y descripción sean strings válidos
+            label_str = str(act)[:100]  # Límite de Discord para labels
+            options.append(discord.SelectOption(label=label_str, description=f"Gestionar: {label_str}"))
 
-# Manejador de errores para permisos de /vertexto
-@vertexto.error
-async def vertexto_error(interaction: discord.Interaction, error):
-    if isinstance(error, app_commands.errors.MissingPermissions):
-        await interaction.response.send_message("❌ No tienes permisos de **Administrador** para usar este comando.", ephemeral=True)
-            
+        class SelectRapido(Select):
+            def __init__(self, t_dict):
+                super().__init__(placeholder="Elige un texto...", min_values=1, max_values=1, options=options)
+                self.t_dict = t_dict
+
+            async def callback(self, inter: discord.Interaction):
+                sel = self.values[0]
+                msg = self.t_dict.get(sel, "Sin contenido")
+                view = AccionesTextoView(sel, msg)
+                await inter.response.edit_message(
+                    content=f"📝 **Activador:** `{sel}`\n\n**Mensaje:**\n{msg}",
+                    view=view
+                )
+
+        class ViewRapida(View):
+            def __init__(self, t_dict):
+                super().__init__(timeout=180)
+                self.add_item(SelectRapido(t_dict))
+
+        view = ViewRapida(textos_servidor)
+        await interaction.followup.send("Selecciona de la lista el texto que deseas ver o administrar:", view=view, ephemeral=True)
+
+    except Exception as e:
+        await interaction.followup.send(f"❌ Ocurrió un error al leer los textos: `{e}`", ephemeral=True)
+        
 
 # 2. El Comando Slash con restricción de Administrador
 @bot.tree.command(name="savetexto", description="Guarda un texto personalizado asociado a un activador")
