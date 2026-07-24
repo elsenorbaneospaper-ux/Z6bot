@@ -48,6 +48,7 @@ def guardar_respuestas(respuestas):
         json.dump(respuestas, f, indent=4, ensure_ascii=False)
 
 archivo = "respuestas_automáticas.json"
+datos = {}
 
 # Mapeo de colores
 COLORES = {
@@ -89,6 +90,7 @@ afk_users = cargar_afk()
 # ÚNICO EVENTO ON_MESSAGE
 @bot.event
 async def on_message(message):
+    global datos
     if message.author.bot:
         return
 
