@@ -677,7 +677,47 @@ async def vertexto(interaction: discord.Interaction):
 
 
 # ========================================================
-# COMANDO SLASH /SAVETEXTO Y SU MODAL
+# ========================================================
+# 1. VISTA DE SELECCIÓN DE ROLES (Debe ir primero)
+# ========================================================
+
+class SeleccionRolesView(View):
+    def __init__(self, activador: str, mensaje: str):
+        super().__init__(timeout=180)
+        self.activador = activador
+        self.mensaje = mensaje
+
+    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Selecciona los roles permitidos...", min_values=1, max_values=25)
+    async def select_roles(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        roles_ids = [role.id for role in select.values]
+        await self.guardar_datos_supabase(interaction, roles_ids)
+
+    @discord.ui.button(label="Todos", style=discord.ButtonStyle.success, emoji="🌍")
+    async def btn_todos(self, interaction: discord.Interaction, button: Button):
+        await self.guardar_datos_supabase(interaction, "todos")
+
+    async def guardar_datos_supabase(self, interaction: discord.Interaction, roles_permitidos):
+        guild_id = str(interaction.guild_id)
+        try:
+            datos_guild = cargar_respuestas_guild(guild_id)
+            datos_guild[self.activador] = {
+                "respuesta": self.mensaje,
+                "roles": roles_permitidos
+            }
+            guardar_respuestas_guild(guild_id, datos_guild)
+
+            rol_msg = "Todos los miembros" if roles_permitidos == "todos" else f"{len(roles_permitidos)} rol(es) seleccionado(s)"
+
+            await interaction.response.edit_message(
+                content=f"✅ **¡Respuesta guardada permanentemente en la nube!**\n\n📌 **Activador:** `{self.activador}`\n🔒 **Permisos:** {rol_msg}",
+                view=None
+            )
+        except Exception as e:
+            await interaction.response.edit_message(content=f"❌ Error al guardar en Supabase: `{e}`", view=None)
+
+
+# ========================================================
+# 2. MODAL PARA ESCRIBIR EL TEXTO (Usa la vista de arriba)
 # ========================================================
 
 class ModalGuardarTexto(discord.ui.Modal, title="Guardar Nueva Respuesta"):
@@ -699,7 +739,6 @@ class ModalGuardarTexto(discord.ui.Modal, title="Guardar Nueva Respuesta"):
         act = self.activador.value
         nsg = self.mensaje.value
 
-        # Llama a la vista de selección de roles para continuar el proceso
         view = SeleccionRolesView(activador=act, mensaje=nsg)
 
         await interaction.response.send_message(
@@ -708,6 +747,10 @@ class ModalGuardarTexto(discord.ui.Modal, title="Guardar Nueva Respuesta"):
             ephemeral=True
         )
 
+
+# ========================================================
+# 3. COMANDO SLASH /SAVETEXTO
+# ========================================================
 
 @bot.tree.command(name="savetexto", description="Guarda un texto personalizado asociado a un activador")
 @app_commands.checks.has_permissions(administrator=True)
@@ -722,7 +765,7 @@ async def savetexto_error(interaction: discord.Interaction, error):
         await interaction.response.send_message(
             "❌ No tienes permisos de **Administrador** para usar este comando.",
             ephemeral=True
-    )
+                       )
         
         
 
