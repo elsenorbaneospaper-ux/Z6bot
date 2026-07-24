@@ -18,7 +18,7 @@ import re
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# Cargar variables de entorno
+
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
