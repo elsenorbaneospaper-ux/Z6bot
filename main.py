@@ -124,11 +124,10 @@ def guardar_afk_guild(guild_id: str, datos: dict):
 # ==========================================
 # EVENTO ON_MESSAGE (AFK, Comando Z6 y Respuestas)
 # ==========================================
-
 @bot.event
 async def on_message(message):
     if message.author.bot:
-        
+        return
 
     guild_id = str(message.guild.id)
     afk_users = cargar_afk_guild(guild_id)
@@ -138,7 +137,7 @@ async def on_message(message):
         del afk_users[message.author.id]
         guardar_afk_guild(guild_id, afk_users)
         try:
-            await message.channel.send(f"👋 ¡Bienvenido de vuelta, {message.author.mention}! Ya te he retirado el estado AFK.")
+            await message.channel.send(f"👋 ¡Bienvenido de vuelta, {message.author.mention}! Ya te he retirado el estado de AFK.")
         except discord.HTTPException:
             pass
 
@@ -172,16 +171,16 @@ async def on_message(message):
                 accion_extra = None
                 for activity in user.activities:
                     if isinstance(activity, discord.Spotify):
-                        accion_extra = f"🎧 Escuchando **{activity.title}** de `{', '.join(activity.artists)}` en Spotify"
+                        accion_extra = f"🎵 Escuchando **{activity.title}** de {', '.join(activity.artists)} en Spotify"
                         break
                     elif activity.type == discord.ActivityType.playing:
                         accion_extra = f"🎮 Jugando a **{activity.name}**"
                         break
                     elif activity.type == discord.ActivityType.streaming:
-                        accion_extra = f"💻 Transmitiendo en directo: **{activity.name}**"
+                        accion_extra = f"📺 Transmitiendo en directo: **{activity.name}**"
                         break
                     elif activity.type == discord.ActivityType.listening:
-                        accion_extra = f"🎵 Escuchando **{activity.name}**"
+                        accion_extra = f"🎧 Escuchando **{activity.name}**"
                         break
                     elif activity.name:
                         accion_extra = f"✨ Actividad: **{activity.name}**"
@@ -192,27 +191,35 @@ async def on_message(message):
                     texto_respuesta += f"\n{accion_extra}"
 
                 await message.reply(texto_respuesta)
-# 4. TUS RESPUESTAS AUTOMÁTICAS DESDE SUPABASE
-datos_guild = cargar_respuestas_guild(guild_id)
-if datos_guild:
-    contenido_mensaje = message.content.strip().lower()
-    print(f"DEBUG - Guild ID: {guild_id}")
-    print(f"DEBUG - Datos cargados de Supabase: {datos_guild}")
-    print(f"DEBUG - Mensaje escrito: {repr(message.content)}")
-    for activador, config_respuesta in datos_guild.items():
-        if contenido_mensaje == activador.strip().lower():
-            mensaje_respuesta = config_respuesta["respuesta"]
-            roles_permitidos = config_respuesta["roles"]
-            tiene_permiso = False
-            if roles_permitidos == "todos":
-                tiene_permiso = True
-            else:
-                user_role_ids = [r.id for r in message.author.roles]
-                if any(rol_id in user_role_ids for rol_id in roles_permitidos):
+
+ # 4. TUS RESPUESTAS AUTOMÁTICAS DESDE SUPABASE
+    datos_guild = cargar_respuestas_guild(guild_id)
+
+    if datos_guild:
+        contenido_mensaje = message.content.strip().lower()
+        print(f"DEBUG - Guild ID: {guild_id}")
+        print(f"DEBUG - Datos cargados de Supabase: {datos_guild}")
+        print(f"DEBUG - Mensaje escrito: {repr(message.content)}")
+
+        for activador, config_respuesta in datos_guild.items():
+            if contenido_mensaje == activador.strip().lower():
+                mensaje_respuesta = config_respuesta["respuesta"]
+                roles_permitidos = config_respuesta["roles"]
+                
+                tiene_permiso = False
+                if roles_permitidos == "todos":
                     tiene_permiso = True
-            if tiene_permiso or message.author.guild_permissions.administrator:
-                await message.channel.send(mensaje_respuesta)
-            break
+                else:
+                    user_role_ids = [r.id for r in message.author.roles]
+                    if any(rol_id in user_role_ids for rol_id in roles_permitidos):
+                        tiene_permiso = True
+                
+                if tiene_permiso or message.author.guild_permissions.administrator:
+                    await message.channel.send(mensaje_respuesta)
+                break
+
+    
+                
             
 
     # --- 5. COMANDO INTELIGENTE (MENCIÓN + REPLY + IMÁGENES + HISTORIAL DE 3 MENSAJES + 1 PALABRA DE HUMOR) ---
