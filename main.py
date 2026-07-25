@@ -519,9 +519,9 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
 ROSTER_ROLES = [
     1501691417146294282,  # Rango 1 (Más alto)
     1501691421340602518,  # Rango 2
-    1530646309336387634,  # Rango 3 (Nuevo rol añadido)
-    1501691439749267526,  # Rango 4 (Límite actualizado a 2)
-    1530154761720958976,  # Rango 5
+    1501691439749267526,  # Rango 3 (Límite 2)
+    1530154761720958976,  # Rango 4
+    1530646309336387634,  # Rango 5 (Nuevo rol - Límite 3)
     1501691442433884261,  # Rango 6
     1501691445558644836,  # Rango 7
     1501691448368824320,  # Rango 8 (Más bajo)
@@ -530,9 +530,9 @@ ROSTER_ROLES = [
 ROSTER_LIMITES = {
     1501691417146294282: 1,
     1501691421340602518: 1,
-    1530646309336387634: 3,  # Límite de 3
     1501691439749267526: 2,  # Límite reducido a 2
     1530154761720958976: 3,
+    1530646309336387634: 3,  # Nuevo rol con límite de 3
     1501691442433884261: 4,
     1501691445558644836: 6,
     1501691448368824320: 10,
@@ -617,9 +617,9 @@ async def updateroaster(ctx):
 
 {generar_bloque(1501691417146294282)}
 {generar_bloque(1501691421340602518)}
-{generar_bloque(1530646309336387634)}
 {generar_bloque(1501691439749267526)}
 {generar_bloque(1530154761720958976)}
+{generar_bloque(1530646309336387634)}
 {generar_bloque(1501691442433884261)}
 {generar_bloque(1501691445558644836)}
 {generar_bloque(1501691448368824320)}
@@ -635,7 +635,7 @@ async def updateroaster_error(ctx, error):
         "❌ No tienes permisos de **Administrador** para ejecutar este comando.",
         delete_after=5,
     )
-    
+      
 # ==========================================
 
 # ==========================================
