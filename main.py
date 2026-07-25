@@ -517,14 +517,14 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
         )
 
 ROSTER_ROLES = [
-    1501691417146294282,  # Rango 1 (Más alto)
+    1501691417146294282,  # Rango 1
     1501691421340602518,  # Rango 2
-    1501691439749267526,  # Rango 3 (Límite 2)
+    1501691439749267526,  # Rango 3
     1530154761720958976,  # Rango 4
-    1530646309336387634,  # Rango 5 (Nuevo rol - Límite 3)
+    1530646309336387634,  # Rango 5
     1501691442433884261,  # Rango 6
     1501691445558644836,  # Rango 7
-    1501691448368824320,  # Rango 8 (Más bajo)
+    1501691448368824320,  # Rango 8
 ]
 
 ROSTER_LIMITES = {
@@ -609,8 +609,8 @@ async def updateroaster(ctx):
 
     return header + "\n\n" + "\n".join(lines) + "\n"
 
-  # Orden exacto respetando la lista ROSTER_ROLES de arriba hacia abajo
-  cuerpo_roster = f"""#   __➥ Roster de Z6 🛡️ __  
+  # Primer mensaje (Cabecera y los primeros 4 rangos)
+  parte_uno = f"""#   __➥ Roster de Z6 🛡️ __  
 
 > • Organizado por la administración ✔️ 
 > • 𝙕𝟲 ★ 𝙎𝙝𝙤𝙥
@@ -619,14 +619,19 @@ async def updateroaster(ctx):
 {generar_bloque(1501691417146294282)}
 {generar_bloque(1501691421340602518)}
 {generar_bloque(1501691439749267526)}
-{generar_bloque(1530154761720958976)}
-{generar_bloque(1530646309336387634)}
+{generar_bloque(1530154761720958976)}"""
+
+  # Segundo mensaje (Los rangos restantes y pie de página)
+  parte_dos = f"""{generar_bloque(1530646309336387634)}
 {generar_bloque(1501691442433884261)}
 {generar_bloque(1501691445558644836)}
 {generar_bloque(1501691448368824320)}
+
 *Si no estais en el roster ➡️ <@&1501691439749267526>*"""
 
-  await canal.send(content=cuerpo_roster)
+  # Mandamos ambos mensajes por separado al canal para evitar límites de texto
+  await canal.send(content=parte_uno)
+  await canal.send(content=parte_dos)
 
 
 @updateroaster.error
@@ -635,9 +640,8 @@ async def updateroaster_error(ctx, error):
     await ctx.send(
         "❌ No tienes permisos de **Administrador** para ejecutar este comando.",
         delete_after=5,
-          )
+      )
       
-# ==========================================
 
 # ==========================================
 # 2. COMANDO: /traducir (Con origen y destino personalizados)
