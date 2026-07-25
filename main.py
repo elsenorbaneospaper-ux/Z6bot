@@ -16,7 +16,6 @@ from deep_translator import GoogleTranslator
 from discord.ui import View, Select, Button
 import re
 from datetime import datetime, timedelta
-from supabase import create_client, Client
 import sqlite3
 
 
@@ -515,32 +514,6 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
             content="✅ Mensaje enviado correctamente.", 
             ephemeral=True
         )
-
-ROSTER_ROLES = [
-    1501691417146294282,  # Rango 1
-    1501691421340602518,  # Rango 2
-    1501691439749267526,  # Rango 3
-    1530154761720958976,  # Rango 4
-    1530646309336387634,  # Rango 5
-    1501691442433884261,  # Rango 6
-    1501691445558644836,  # Rango 7
-    1501691448368824320,  # Rango 8
-]
-
-ROSTER_LIMITES = {
-    1501691417146294282: 1,
-    1501691421340602518: 1,
-    1501691439749267526: 2,
-    1530154761720958976: 3,
-    1530646309336387634: 3,
-    1501691442433884261: 4,
-    1501691445558644836: 6,
-    1501691448368824320: 10,
-}
-
-CANAL_ROSTER_ID = 1530204414873178382
-
-
 @bot.command(name="updateroaster")
 @commands.has_permissions(administrator=True)
 async def updateroaster(ctx):
@@ -609,8 +582,8 @@ async def updateroaster(ctx):
 
     return header + "\n\n" + "\n".join(lines) + "\n"
 
-  # Primer mensaje (Cabecera y los primeros 4 rangos)
-  parte_uno = f"""#   __➥ Roster de Z6 🛡️ __  
+  try:
+    parte_uno = f"""#   __➥ Roster de Z6 🛡️ __  
 
 > • Organizado por la administración ✔️ 
 > • 𝙕𝟲 ★ 𝙎𝙝𝙤𝙥
@@ -621,17 +594,25 @@ async def updateroaster(ctx):
 {generar_bloque(1501691439749267526)}
 {generar_bloque(1530154761720958976)}"""
 
-  # Segundo mensaje (Los rangos restantes y pie de página)
-  parte_dos = f"""{generar_bloque(1530646309336387634)}
+    parte_dos = f"""{generar_bloque(1530646309336387634)}
 {generar_bloque(1501691442433884261)}
 {generar_bloque(1501691445558644836)}
 {generar_bloque(1501691448368824320)}
 
 *Si no estais en el roster ➡️ <@&1501691439749267526>*"""
 
-  # Mandamos ambos mensajes por separado al canal para evitar límites de texto
-  await canal.send(content=parte_uno)
-  await canal.send(content=parte_dos)
+    # Enviamos los dos mensajes
+    await canal.send(content=parte_uno)
+    await canal.send(content=parte_dos)
+
+    # Te avisa discretamente en el chat que se actualizó con éxito (se borra solo en 4 segundos)
+    await ctx.send("✅ ¡Roster actualizado correctamente!", delete_after=4)
+
+  except Exception as e:
+    await ctx.send(
+        f"⚠️ Error al enviar los mensajes del roster: ```{e}```",
+        delete_after=10,
+    )
 
 
 @updateroaster.error
@@ -640,7 +621,7 @@ async def updateroaster_error(ctx, error):
     await ctx.send(
         "❌ No tienes permisos de **Administrador** para ejecutar este comando.",
         delete_after=5,
-      )
+    )
       
 
 # ==========================================
