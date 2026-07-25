@@ -514,6 +514,121 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
             ephemeral=True
         )
 
+# Lista ordenada de mayor a menor jerarquía (el índice 0 es el rango más alto)
+ROSTER_ROLES = [
+    1501691417146294282,  # Rango 1 (Más alto)
+    1501691421340602518,  # Rango 2
+    1501691439749267526,  # Rango 3
+    1530154761720958976,  # Rango 4
+    1501691442433884261,  # Rango 5
+    1501691445558644836,  # Rango 6
+    1501691448368824320,  # Rango 7 (Más bajo)
+]
+
+# Límites de cada sección en el mismo orden de la lista anterior
+ROSTER_LIMITES = {
+    1501691417146294282: 1,
+    1501691421340602518: 1,
+    1501691439749267526: 3,
+    1530154761720958976: 3,
+    1501691442433884261: 4,
+    1501691445558644836: 6,
+    1501691448368824320: 10,
+}
+
+# Canal fijo donde se actualizará el roster
+CANAL_ROSTER_ID = 1530204414873178382
+
+
+@bot.command(name="updateroaster")
+@commands.has_permissions(administrator=True)
+async def updateroaster(ctx):
+  try:
+    await ctx.message.delete()
+  except Exception:
+    pass
+
+  guild = ctx.guild
+  canal = guild.get_channel(CANAL_ROSTER_ID)
+
+  if not canal:
+    await ctx.send(
+        "❌ No se pudo encontrar el canal configurado con ese ID.", delete_after=5
+    )
+    return
+
+  try:
+    await canal.purge()
+  except discord.Forbidden:
+    await ctx.send(
+        "❌ El bot no tiene permisos de 'Gestionar mensajes' en ese canal.",
+        delete_after=5,
+    )
+    return
+  except Exception as e:
+    await ctx.send(f"❌ Ocurrió un error al limpiar el canal: {e}", delete_after=5)
+    return
+
+  miembros_por_rol = {role_id: [] for role_id in ROSTER_ROLES}
+  usuarios_ya_asignados = set()
+
+  for role_id in ROSTER_ROLES:
+    role = guild.get_role(role_id)
+    if not role:
+      continue
+
+    limite = ROSTER_LIMITES[role_id]
+
+    for member in role.members:
+      if member.bot:
+        continue
+      if member.id not in usuarios_ya_asignados:
+        if len(miembros_por_rol[role_id]) < limite:
+          miembros_por_rol[role_id].append(member)
+          usuarios_ya_asignados.add(member.id)
+
+  def generar_bloque(role_id):
+    limite = ROSTER_LIMITES[role_id]
+    members = miembros_por_rol[role_id]
+    actual = len(members)
+
+    header = f"────── 『  <@&{role_id}>  ({actual}/{limite})  』 ──────"
+
+    lines = []
+    for i in range(limite):
+      if i < actual:
+        lines.append(f"•  » {members[i].mention}")
+      else:
+        lines.append("•  » ")
+
+    return header + "\n\n" + "\n".join(lines) + "\n"
+
+  cuerpo_roster = f"""#   __➥ Roster de Z6 <:z6S:1527944749099515985> __  
+
+> • Organizado por la administración <:Verificado:1530133650719637577> 
+> • 𝙕𝟲 ★ 𝙎𝙝𝙤𝙥
+> • Creado por <@&1501691439749267526> 
+
+{generar_bloque(1501691417146294282)}
+{generar_bloque(1501691421340602518)}
+{generar_bloque(1501691439749267526)}
+{generar_bloque(1530154761720958976)}
+{generar_bloque(1501691442433884261)}
+{generar_bloque(1501691445558644836)}
+{generar_bloque(1501691448368824320)}
+*Si no estais en el roster <a:flecha:1485081984672727201> <@&1501691439749267526>*"""
+
+  await canal.send(content=cuerpo_roster)
+
+
+@updateroaster.error
+async def updateroaster_error(ctx, error):
+  if isinstance(error, commands.MissingPermissions):
+    await ctx.send(
+        "❌ No tienes permisos de **Administrador** para ejecutar este comando.",
+        delete_after=5,
+          )
+      
 
 # ==========================================
 
