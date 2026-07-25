@@ -530,9 +530,9 @@ ROSTER_ROLES = [
 ROSTER_LIMITES = {
     1501691417146294282: 1,
     1501691421340602518: 1,
-    1501691439749267526: 2,  # Límite reducido a 2
+    1501691439749267526: 2,
     1530154761720958976: 3,
-    1530646309336387634: 3,  # Nuevo rol con límite de 3
+    1530646309336387634: 3,
     1501691442433884261: 4,
     1501691445558644836: 6,
     1501691448368824320: 10,
@@ -609,6 +609,7 @@ async def updateroaster(ctx):
 
     return header + "\n\n" + "\n".join(lines) + "\n"
 
+  # Orden exacto respetando la lista ROSTER_ROLES de arriba hacia abajo
   cuerpo_roster = f"""#   __➥ Roster de Z6 🛡️ __  
 
 > • Organizado por la administración ✔️ 
@@ -634,7 +635,7 @@ async def updateroaster_error(ctx, error):
     await ctx.send(
         "❌ No tienes permisos de **Administrador** para ejecutar este comando.",
         delete_after=5,
-    )
+          )
       
 # ==========================================
 
