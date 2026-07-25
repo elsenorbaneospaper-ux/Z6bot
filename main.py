@@ -519,17 +519,19 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
 ROSTER_ROLES = [
     1501691417146294282,  # Rango 1 (Más alto)
     1501691421340602518,  # Rango 2
-    1501691439749267526,  # Rango 3
-    1530154761720958976,  # Rango 4
-    1501691442433884261,  # Rango 5
-    1501691445558644836,  # Rango 6
-    1501691448368824320,  # Rango 7 (Más bajo)
+    1530646309336387634,  # Rango 3 (Nuevo rol añadido)
+    1501691439749267526,  # Rango 4 (Límite actualizado a 2)
+    1530154761720958976,  # Rango 5
+    1501691442433884261,  # Rango 6
+    1501691445558644836,  # Rango 7
+    1501691448368824320,  # Rango 8 (Más bajo)
 ]
 
 ROSTER_LIMITES = {
     1501691417146294282: 1,
     1501691421340602518: 1,
-    1501691439749267526: 3,
+    1530646309336387634: 3,  # Límite de 3
+    1501691439749267526: 2,  # Límite reducido a 2
     1530154761720958976: 3,
     1501691442433884261: 4,
     1501691445558644836: 6,
@@ -568,10 +570,14 @@ async def updateroaster(ctx):
     await ctx.send(f"❌ Ocurrió un error al limpiar el canal: {e}", delete_after=5)
     return
 
+  try:
+    await guild.chunk()
+  except Exception:
+    pass
+
   miembros_por_rol = {role_id: [] for role_id in ROSTER_ROLES}
   usuarios_ya_asignados = set()
 
-  # Recorremos por jerarquía estricta para evitar duplicados en rangos inferiores
   for role_id in ROSTER_ROLES:
     role = guild.get_role(role_id)
     if not role:
@@ -597,10 +603,8 @@ async def updateroaster(ctx):
     lines = []
     for i in range(limite):
       if i < actual:
-        # AQUÍ ES DONDE PONE LA MENCIÓN DEL USUARIO REAL EN SU SECCIÓN
         lines.append(f"•  » {members[i].mention}")
       else:
-        # Si sobran espacios, deja la línea vacía con su viñeta
         lines.append("•  » ")
 
     return header + "\n\n" + "\n".join(lines) + "\n"
@@ -613,6 +617,7 @@ async def updateroaster(ctx):
 
 {generar_bloque(1501691417146294282)}
 {generar_bloque(1501691421340602518)}
+{generar_bloque(1530646309336387634)}
 {generar_bloque(1501691439749267526)}
 {generar_bloque(1530154761720958976)}
 {generar_bloque(1501691442433884261)}
@@ -629,9 +634,8 @@ async def updateroaster_error(ctx, error):
     await ctx.send(
         "❌ No tienes permisos de **Administrador** para ejecutar este comando.",
         delete_after=5,
-            )
-      
-
+    )
+    
 # ==========================================
 
 # ==========================================
