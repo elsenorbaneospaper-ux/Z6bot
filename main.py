@@ -514,7 +514,6 @@ class FormularioMensaje(Modal, title='Enviar Mensaje Personalizado'):
             ephemeral=True
         )
 
-# Lista ordenada de mayor a menor jerarquía (el índice 0 es el rango más alto)
 ROSTER_ROLES = [
     1501691417146294282,  # Rango 1 (Más alto)
     1501691421340602518,  # Rango 2
@@ -525,7 +524,6 @@ ROSTER_ROLES = [
     1501691448368824320,  # Rango 7 (Más bajo)
 ]
 
-# Límites de cada sección en el mismo orden de la lista anterior
 ROSTER_LIMITES = {
     1501691417146294282: 1,
     1501691421340602518: 1,
@@ -536,7 +534,6 @@ ROSTER_LIMITES = {
     1501691448368824320: 10,
 }
 
-# Canal fijo donde se actualizará el roster
 CANAL_ROSTER_ID = 1530204414873178382
 
 
@@ -572,6 +569,7 @@ async def updateroaster(ctx):
   miembros_por_rol = {role_id: [] for role_id in ROSTER_ROLES}
   usuarios_ya_asignados = set()
 
+  # Recorremos por jerarquía estricta para evitar duplicados en rangos inferiores
   for role_id in ROSTER_ROLES:
     role = guild.get_role(role_id)
     if not role:
@@ -597,15 +595,17 @@ async def updateroaster(ctx):
     lines = []
     for i in range(limite):
       if i < actual:
+        # AQUÍ ES DONDE PONE LA MENCIÓN DEL USUARIO REAL EN SU SECCIÓN
         lines.append(f"•  » {members[i].mention}")
       else:
+        # Si sobran espacios, deja la línea vacía con su viñeta
         lines.append("•  » ")
 
     return header + "\n\n" + "\n".join(lines) + "\n"
 
-  cuerpo_roster = f"""#   __➥ Roster de Z6 <:z6S:1527944749099515985> __  
+  cuerpo_roster = f"""#   __➥ Roster de Z6 🛡️ __  
 
-> • Organizado por la administración <:Verificado:1530133650719637577> 
+> • Organizado por la administración ✔️ 
 > • 𝙕𝟲 ★ 𝙎𝙝𝙤𝙥
 > • Creado por <@&1501691439749267526> 
 
@@ -616,7 +616,7 @@ async def updateroaster(ctx):
 {generar_bloque(1501691442433884261)}
 {generar_bloque(1501691445558644836)}
 {generar_bloque(1501691448368824320)}
-*Si no estais en el roster <a:flecha:1485081984672727201> <@&1501691439749267526>*"""
+*Si no estais en el roster ➡️ <@&1501691439749267526>*"""
 
   await canal.send(content=cuerpo_roster)
 
@@ -627,7 +627,7 @@ async def updateroaster_error(ctx, error):
     await ctx.send(
         "❌ No tienes permisos de **Administrador** para ejecutar este comando.",
         delete_after=5,
-          )
+            )
       
 
 # ==========================================
