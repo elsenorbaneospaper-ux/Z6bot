@@ -27,6 +27,8 @@ client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 # Inicializar bot de Discord
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
+intents.members = True
 bot = commands.Bot(command_prefix="?", intents=intents)
 
 
