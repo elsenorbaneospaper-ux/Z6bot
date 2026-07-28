@@ -486,7 +486,9 @@ async def on_message(message):
                             if rol_mencionado:
                                 await usuario_obj.remove_roles(rol_mencionado)
                                 await message.channel.send(f"✨ Le quité el rol **{rol_mencionado.name}** a {usuario_obj.mention}, bro.")
-        
+                         except Exception as e:
+                             print(f"Error quitar rol: {e}")
+
 class RepeatView(discord.ui.View):
 
   def __init__(self, duration_seconds: int, reason: str):
