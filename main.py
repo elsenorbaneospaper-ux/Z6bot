@@ -16,13 +16,29 @@ from deep_translator import GoogleTranslator
 from discord.ui import View, Select, Button
 import re
 from datetime import datetime, timedelta
-import sqlite3
+from pymongo import MongoClient
+from datetime import datetime, timezone
+
 
 
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+# Cliente de Groq (lo mantienes con su nombre original)
+client = Groq(api_key=os.environ.get("GROQ_API_KEY")) 
+
+# Cliente de MongoDB
+MONGO_URI = os.getenv('MONGO_URI')
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client["z6bot_database"] 
+
+# Colecciones de MongoDB
+respuestas_collection = db["respuestas_guilds"]
+afk_collection = db["afk"]
+warns_collection = db["warns"]
+permisos_links_collection = db["permisos_links"]
+
 # Inicializar bot de Discord
 intents = discord.Intents.default()
 intents.message_content = True
@@ -38,25 +54,84 @@ app = Flask(__name__)
 # Funciones para manejar respuestas automáticas en la nube con Supabase
 # Funciones para manejar respuestas automáticas en la nube con Supabase
 
-def cargar_respuestas_guild(guild_id: str):
-    """Carga las respuestas de un servidor específico desde Supabase"""
+def remover_ultimo_warn(user_id: str, guild_id: str):
+    """Elimina el warn más reciente de un usuario en MongoDB y devuelve el total restante"""
     try:
-        response = supabase.table("respuestas_guilds").select("datos").eq("guild_id", str(guild_id)).execute()
-        if response.data:
-            return response.data[0]["datos"]
+        warns_collection = db["warns"]
+        # Buscamos el último warn registrado para este usuario en este servidor
+        ultimo = warns_collection.find_one(
+            {"user_id": str(user_id), "guild_id": str(guild_id)},
+            sort=[("_id", -1)]
+        )
+        if ultimo:
+            warns_collection.delete_one({"_id": ultimo["_id"]})
+        
+        # Devolvemos cuántos warns le quedan
+        total_restante = warns_collection.count_documents({"user_id": str(user_id), "guild_id": str(guild_id)})
+        return total_restante
     except Exception as e:
-        print(f"❌ Error al cargar de Supabase: {e}")
-    return {}
+        print(f"Error al remover warn: {e}")
+        return None
+        
+def registrar_warn_y_verificar(user_id: str, guild_id: str, razon: str):
+    try:
+        warns_collection.insert_one({
+            "user_id": str(user_id),
+            "guild_id": str(guild_id),
+            "razon": razon,
+            "fecha": datetime.now(timezone.utc)
+        })
+        return warns_collection.count_documents({"user_id": str(user_id), "guild_id": str(guild_id)})
+    except Exception as e:
+        print(f"Error al registrar warn: {e}")
+        return 0
+
+def otorgar_permiso_link(target_id: str, guild_id: str, tipo: str):
+    try:
+        permisos_links_collection.update_one(
+            {"target_id": str(target_id), "guild_id": str(guild_id)},
+            {"$set": {"tipo": tipo}},
+            upsert=True
+        )
+    except Exception as e:
+        print(f"Error guardando permiso de link: {e}")
+
+def tiene_permiso_link(member: discord.Member):
+    if member.guild_permissions.administrator or member.guild_permissions.manage_guild:
+        return True
+    guild_id = str(member.guild.id)
+    user_id = str(member.id)
+    if permisos_links_collection.find_one({"target_id": user_id, "guild_id": guild_id}):
+        return True
+    for rol in member.roles:
+        if permisos_links_collection.find_one({"target_id": str(rol.id), "guild_id": guild_id}):
+            return True
+    return False
+    
+def cargar_respuestas_guild(guild_id: str):
+    """Carga las respuestas de un servidor especifico desde MongoDB"""
+    try:
+        # Buscamos un documento que coincida con el guild_id
+        resultado = respuestas_collection.find_one({"guild_id": str(guild_id)})
+        
+        if resultado and "datos" in resultado:
+            return resultado["datos"]
+        return {}
+    except Exception as e:
+        print(f"❌ Error al cargar de MongoDB: {e}")
+        return {}
 
 def guardar_respuestas_guild(guild_id: str, datos: dict):
-    """Guarda o actualiza las respuestas de un servidor en Supabase"""
+    """Guarda o actualiza las respuestas de un servidor en MongoDB (Upsert)"""
     try:
-        supabase.table("respuestas_guilds").upsert({
-            "guild_id": str(guild_id),
-            "datos": datos
-        }).execute()
+        # Usamos update_one con upsert=True para insertar si no existe o actualizar si ya existe
+        respuestas_collection.update_one(
+            {"guild_id": str(guild_id)},
+            {"$set": {"datos": datos}},
+            upsert=True
+        )
     except Exception as e:
-        print(f"❌ Error al guardar en Supabase: {e}")
+        print(f"❌ Error al guardar en MongoDB: {e}")
         
         
 
@@ -78,125 +153,77 @@ async def on_ready():
     except Exception as e:
         print(f'❌ Error al sincronizar comandos: {e}')
 
-# ==========================================
-# GESTIÓN DE BASE DE DATOS LOCAL (SQLITE)
-# ==========================================
-
-def inicializar_db():
-    conexion = sqlite3.connect("database.db")
-    cursor = conexion.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS respuestas_guilds (
-            guild_id TEXT PRIMARY KEY,
-            datos TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS afk_guilds (
-            guild_id TEXT PRIMARY KEY,
-            datos TEXT
-        )
-    """)
-    conexion.commit()
-    conexion.close()
-
-# Ejecutamos la inicialización al arrancar el script
-inicializar_db()
-
-def cargar_respuestas_guild(guild_id: str):
-    """Carga las respuestas de un servidor específico desde SQLite"""
-    try:
-        conexion = sqlite3.connect("database.db")
-        cursor = conexion.cursor()
-        cursor.execute("SELECT datos FROM respuestas_guilds WHERE guild_id = ?", (str(guild_id),))
-        resultado = cursor.fetchone()
-        conexion.close()
-        
-        if resultado and resultado[0]:
-            return json.loads(resultado[0])
-    except Exception as e:
-        print(f"❌ Error al cargar respuestas de SQLite: {e}")
-    return {}
-
-def guardar_respuestas_guild(guild_id: str, datos: dict):
-    """Guarda o actualiza las respuestas de un servidor en SQLite"""
-    try:
-        conexion = sqlite3.connect("database.db")
-        cursor = conexion.cursor()
-        datos_json = json.dumps(datos)
-        cursor.execute("""
-            INSERT OR REPLACE INTO respuestas_guilds (guild_id, datos) 
-            VALUES (?, ?)
-        """, (str(guild_id), datos_json))
-        conexion.commit()
-        conexion.close()
-    except Exception as e:
-        print(f"❌ Error al guardar respuestas en SQLite: {e}")
-
-def cargar_afk_guild(guild_id: str):
-    """Carga los usuarios AFK de un servidor desde SQLite"""
-    try:
-        conexion = sqlite3.connect("database.db")
-        cursor = conexion.cursor()
-        cursor.execute("SELECT datos FROM afk_guilds WHERE guild_id = ?", (str(guild_id),))
-        resultado = cursor.fetchone()
-        conexion.close()
-        
-        if resultado and resultado[0]:
-            datos_cargados = json.loads(resultado[0])
-            return {int(k) if str(k).isdigit() else k: v for k, v in datos_cargados.items()}
-    except Exception as e:
-        print(f"❌ Error al cargar AFK de SQLite: {e}")
-    return {}
-
-def guardar_afk_guild(guild_id: str, datos: dict):
-    """Guarda o actualiza los usuarios AFK de un servidor en SQLite"""
-    try:
-        conexion = sqlite3.connect("database.db")
-        cursor = conexion.cursor()
-        datos_str_keys = {str(k): v for k, v in datos.items()}
-        datos_json = json.dumps(datos_str_keys)
-        cursor.execute("""
-            INSERT OR REPLACE INTO afk_guilds (guild_id, datos) 
-            VALUES (?, ?)
-        """, (str(guild_id), datos_json))
-        conexion.commit()
-        conexion.close()
-    except Exception as e:
-        print(f"❌ Error al guardar AFK en SQLite: {e}")
 
 
 # ==========================================
 # EVENTO ON_MESSAGE (AFK, Comando Z6 y Respuestas)
 # ==========================================
+# ==========================================
+# EVENTO UNIFICADO on_message (Con Alertas Automáticas al Canal de Logs)
+# ==========================================
+
 @bot.event
 async def on_message(message):
-    print(f"DEBUG GENERAL - Mensaje recibido de {message.author}: {repr(message.content)}")
     if message.author.bot:
         return
 
-    guild_id = str(message.guild.id)
-    afk_users = cargar_afk_guild(guild_id)
+    user_id = str(message.author.id)
 
-    # 1. SI EL USUARIO AFK ESCRIBE, SE LE QUITA EL ESTADO
-    if message.author.id in afk_users:
-        del afk_users[message.author.id]
-        guardar_afk_guild(guild_id, afk_users)
+    # --- A. FILTRO POTENTE DE LINKS Y ALERTA DE SEGURIDAD ---
+    if "http://" in message.content.lower() or "https://" in message.content.lower() or "www." in message.content.lower() or "discord.gg/" in message.content.lower():
+        if message.guild and not tiene_permiso_link(message.author):
+            try:
+                await message.delete()
+                total_w = registrar_warn_y_verificar(str(message.author.id), str(message.guild.id), "Envío de link no autorizado")
+
+                canal_alerta = message.guild.get_channel(1501692089170399343)
+                if canal_alerta:
+                    roles_admin = [rol.mention for rol in message.guild.roles if rol.permissions.administrator or rol.permissions.manage_guild]
+                    mencion_admins = " ".join(roles_admin[:5])
+
+                    embed_alerta = discord.Embed(
+                        title="🚨 ¡Alerta de Seguridad: Link Bloqueado!",
+                        description="Se ha detectado y bloqueado un enlace no autorizado.",
+                        color=discord.Color.red()
+                    )
+                    embed_alerta.add_field(name="👤 Usuario", value=f"{message.author.mention}", inline=True)
+                    embed_alerta.add_field(name="📍 Canal", value=message.channel.mention, inline=True)
+                    embed_alerta.add_field(name="🔗 Contenido", value=f"```{message.content}```", inline=False)
+                    embed_alerta.add_field(name="⚠️ Sanción", value=f"Mensaje borrado. Warns: **{total_w}/5**", inline=False)
+                    
+                    await canal_alerta.send(content=f"🔔 **Atención administradores:** {mencion_admins}", embed=embed_alerta)
+                
+                aviso = await message.channel.send(f"⚠️ {message.author.mention}, no tienes permisos para enviar links aquí, bro.")
+                await asyncio.sleep(5)
+                await aviso.delete()
+                return
+            except Exception as e:
+                print(f"Error en filtro de links: {e}")
+
+    # --- B. QUITAR ESTADO AFK SI EL USUARIO ESCRIBE ---
+    datos_afk = afk_collection.find_one({"user_id": user_id})
+    if datos_afk and datos_afk.get("activo"):
+        afk_collection.delete_one({"user_id": user_id})
         try:
-            await message.channel.send(f"👋 ¡Bienvenido de vuelta, {message.author.mention}! Ya te he retirado el estado de AFK.")
+            await message.channel.send(f"👋 ¡Bienvenido de vuelta, {message.author.mention}! Ya te retiré el estado AFK.")
         except discord.HTTPException:
             pass
 
-    # 2. COMANDO AFK (Con prefijo z6)
-    contenido_lower = message.content.lower()
-    if contenido_lower.startswith("z6 afk"):
+    # --- C. ACTIVAR COMANDO AFK ---
+    if message.content.lower().startswith("z6 afk"):
         partes = message.content.split(" ", 2)
         razon = partes[2] if len(partes) > 2 else "Sin razón especificada"
 
-        afk_users[message.author.id] = razon
-        guardar_afk_guild(guild_id, afk_users)
+        afk_collection.update_one(
+            {"user_id": user_id},
+            {"$set": {
+                "razon": razon, 
+                "activo": True, 
+                "tiempo_inicio": datetime.now(timezone.utc)
+            }},
+            upsert=True
+        )
 
-        # Creamos el Embed decorado para la activación
         embed_afk = discord.Embed(
             title="💤 ¡Modo AFK Activado!",
             description="Te has puesto ausente correctamente.",
@@ -204,133 +231,101 @@ async def on_message(message):
         )
         embed_afk.add_field(name="📌 Razón", value=razon, inline=False)
         embed_afk.set_footer(text="⚡ Se te quitará el estado en cuanto escribas un mensaje.")
-
         await message.reply(embed=embed_afk)
         return
 
-    # 3. DETECTAR MENCIONES Y CONEXIONES (Usuarios AFK mencionados)
+    # --- D. DETECTAR MENCIONES A USUARIOS AFK ---
     if message.mentions:
         for user in message.mentions:
-            if user.id in afk_users:
-                razon = afk_users[user.id]
+            user_afk_data = afk_collection.find_one({"user_id": str(user.id)})
+            
+            if user_afk_data and user_afk_data.get("activo"):
+                razon = user_afk_data.get("razon", "Sin razón")
+                tiempo_inicio = user_afk_data.get("tiempo_inicio")
                 
+                tiempo_texto = "hace un momento"
+                if tiempo_inicio:
+                    if tiempo_inicio.tzinfo is None:
+                        tiempo_inicio = tiempo_inicio.replace(tzinfo=timezone.utc)
+                    
+                    diferencia = datetime.now(timezone.utc) - tiempo_inicio
+                    segundos = int(diferencia.total_seconds())
+                    horas, minutos = segundos // 3600, (segundos % 3600) // 60
+                    
+                    partes_t = []
+                    if horas > 0: partes_t.append(f"{horas} hora{'s' if horas > 1 else ''}")
+                    if minutos > 0 or horas == 0: partes_t.append(f"{minutos} minuto{'s' if minutos != 1 else ''}")
+                    tiempo_texto = f"hace {' y '.join(partes_t)}"
+
                 accion_extra = None
                 for activity in user.activities:
                     if isinstance(activity, discord.Spotify):
                         accion_extra = f"🎵 Escuchando **{activity.title}** de {', '.join(activity.artists)} en Spotify"
                         break
-                    elif activity.type == discord.ActivityType.playing:
-                        accion_extra = f"🎮 Jugando a **{activity.name}**"
-                        break
-                    elif activity.type == discord.ActivityType.streaming:
-                        accion_extra = f"📺 Transmitiendo en directo: **{activity.name}**"
-                        break
-                    elif activity.type == discord.ActivityType.listening:
-                        accion_extra = f"🎧 Escuchando **{activity.name}**"
-                        break
-                    elif activity.name:
-                        accion_extra = f"✨ Actividad: **{activity.name}**"
-                        break
-
-                texto_respuesta = f"⚠️ **{user.mention}** se encuentra AFK en este momento.\n📌 **Razón:** {razon}"
-                if accion_extra:
-                    texto_respuesta += f"\n{accion_extra}"
-
-                await message.reply(texto_respuesta)
-
-    # 4. TUS RESPUESTAS AUTOMÁTICAS DESDE SQLITE
-    datos_guild = cargar_respuestas_guild(guild_id)
-
-    if datos_guild:
-        contenido_mensaje = message.content.strip().lower()
-        print(f"DEBUG - Guild ID: {guild_id}")
-        print(f"DEBUG - Datos cargados de SQLite: {datos_guild}")
-        print(f"DEBUG - Mensaje escrito: {repr(message.content)}")
-
-        for activador, config_respuesta in datos_guild.items():
-            if contenido_mensaje == activador.strip().lower():
-                mensaje_respuesta = config_respuesta["respuesta"]
-                roles_permitidos = config_respuesta["roles"]
                 
-                tiene_permiso = False
-                if roles_permitidos == "todos":
-                    tiene_permiso = True
-                else:
-                    user_role_ids = [r.id for r in message.author.roles]
-                    if any(rol_id in user_role_ids for rol_id in roles_permitidos):
-                        tiene_permiso = True
+                aviso_afk = f"💤 El usuario **{user.name}** está AFK **{tiempo_texto}**.\n📌 **Razón:** {razon}"
+                if accion_extra: aviso_afk += f"\n{accion_extra}"
                 
-                if tiene_permiso or message.author.guild_permissions.administrator:
-                    await message.channel.send(mensaje_respuesta)
-                break
-                
-    # --- 5. COMANDO INTELIGENTE (MENCIÓN + REPLY + IMÁGENES + HISTORIAL DE 3 MENSAJES + 1 PALABRA DE HUMOR) ---
+                try:
+                    await message.channel.send(aviso_afk)
+                except discord.HTTPException:
+                    pass
+
+    # --- E. COMANDO INTELIGENTE (IA CON MODERACIÓN Y LOGS AUTOMÁTICOS) ---
     if bot.user in message.mentions:
         pregunta = message.content
         for mention in message.mentions:
             pregunta = pregunta.replace(f"<@{mention.id}>", "").replace(f"<@!{mention.id}>", "").strip()
 
         contexto_historial = []
-        imagen_url = None
         mensaje_actual = message
 
-        # Rastrear hacia atrás el hilo de replies hasta un máximo de 3 mensajes previos
-        for _ in range(3):
+        if message.reference and message.reference.message_id:
+            try:
+                msg_reply = await message.channel.fetch_message(message.reference.message_id)
+                if msg_reply:
+                    contexto_historial.append({
+                        "role": "user",
+                        "content": f"[El usuario hizo reply al mensaje de {msg_reply.author.display_name}]: {msg_reply.content or '[Mensaje sin texto]'}"
+                    })
+            except Exception as e:
+                print(f"Error en reply directo: {e}")
+
+        for _ in range(5):
             if mensaje_actual.reference and mensaje_actual.reference.message_id:
                 try:
                     mensaje_ref = await message.channel.fetch_message(mensaje_actual.reference.message_id)
                     if mensaje_ref:
                         rol_ref = "assistant" if mensaje_ref.author == bot.user else "user"
-                        autor_nombre = mensaje_ref.author.display_name
-                        contenido_ref = f"[{autor_nombre}]: {mensaje_ref.content}" if mensaje_ref.content else f"[{autor_nombre} envió contenido multimedia]"
-                        
-                        # Insertar al inicio para mantener el orden cronológico correcto
                         contexto_historial.insert(0, {
                             "role": rol_ref, 
-                            "content": contenido_ref
+                            "content": f"[{mensaje_ref.author.display_name}]: {mensaje_ref.content or '[Vacío]'}"
                         })
-
-                        # Capturar imagen si el mensaje del hilo tiene adjuntos
-                        if not imagen_url and mensaje_ref.attachments:
-                            for attachment in mensaje_ref.attachments:
-                                if attachment.content_type and "image" in attachment.content_type:
-                                    imagen_url = attachment.url
-                                    break
-
                         mensaje_actual = mensaje_ref
                     else:
                         break
-                except Exception as e:
-                    print(f"Error al obtener mensaje del historial: {e}")
+                except Exception:
                     break
             else:
                 break
 
-        # Revisar si el mensaje actual que menciona al bot trae una imagen adjunta
-        if not imagen_url and message.attachments:
-            for attachment in message.attachments:
-                if attachment.content_type and "image" in attachment.content_type:
-                    imagen_url = attachment.url
-                    break
-
         async with message.channel.typing():
             try:
                 system_prompt = (
-                    "Eres un asistente directo y útil, pero tienes una personalidad sutilmente relajada. "
-                    "REGLA DE IDIOMA ABSOLUTA: Debes responder EXCLUSIVAMENTE en español. "
-                    "REGLA DE ORO DE HUMOR: En momentos especiales de la conversación, incluye OBLIGATORIAMENTE **exactamente una sola palabra** de humor de internet (por ejemplo: 'bro', '💜', 'xd', 'god', 'ostia' no lo uses en cada mensaje,a menos que lo amerite) tambien usa emojis que concuerden con la conversación. Nunca uses más de una palabra de este tipo de humor de internet por mensaje,el 💜 solo lo usarás en mensajes sarcásticos."
-                    "REGLA ABSOLUTA DE EXTENSIÓN: Tu respuesta NO PUEDE superar las 75 palabras bajo ninguna circunstancia,pero toda oración tuya tiene minimo 15 palabras."
+                    "Eres un asistente de Discord amigable, relajado y buena onda por defecto. "
+                    "EXCEPCIÓN 1 (MODERACIÓN): Si un moderador te ordena una sanción o revertirla (warn, mute, kick, ban, unwarn, unban), adopta postura seria y añade al final: [ACCION: tipo | usuario_o_id | razon]. "
+                    "EXCEPCIÓN 2 (ROLES): Si piden crear un rol, añade: [CREAR_ROL: nombre | color]. "
+                    "EXCEPCIÓN 3 (PERMISO DE LINKS): Si piden dar permisos de links, añade: [PERMISO_LINK: id | tipo]. "
+                    "REGLAS: Responde solo en español. Usa emojis ':borja:' y ':Embobao:'. "
+                    "Humor: incluye exactamente una sola palabra de internet (ej: 'bro', 'xd'). Máximo 75 palabras, oraciones de mínimo 15 palabras."
                 )
 
-                # Combinamos historial y texto de la pregunta (sin imágenes)
-                texto_final = pregunta if pregunta else "¿Qué onda con esto?"
-                
                 messages = [{"role": "system", "content": system_prompt}]
                 messages.extend(contexto_historial)
-                messages.append({"role": "user", "content": texto_final})
+                messages.append({"role": "user", "content": pregunta or "¿Qué onda?"})
 
                 completion = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",  # <--- Modelo de texto puro, rapidísimo y muy estable en Groq
+                    model="llama-3.3-70b-versatile",
                     messages=messages,
                     max_tokens=120,
                     temperature=0.7,
@@ -338,20 +333,122 @@ async def on_message(message):
 
                 reply_text = completion.choices[0].message.content or "xd."
 
-                await message.reply(reply_text)
+                # Función auxiliar interna para enviar logs al canal 1501692089170399343
+                async def enviar_log_moderacion(guild, titulo, descripcion_accion, usuario_afectado_str, moderador):
+                    try:
+                        canal_logs = guild.get_channel(1501692089170399343)
+                        if canal_logs:
+                            roles_admin = [rol.mention for rol in guild.roles if rol.permissions.administrator or rol.permissions.manage_guild]
+                            mencion_admins = " ".join(roles_admin[:5])
 
+                            embed_log = discord.Embed(
+                                title=f"🛡️ {titulo}",
+                                description=descripcion_accion,
+                                color=discord.Color.dark_red() if "Ban" in titulo or "Mut" in titulo else discord.Color.gold()
+                            )
+                            embed_log.add_field(name="👤 Usuario Afectado", value=usuario_afectado_str, inline=True)
+                            embed_log.add_field(name="👮 Moderador / Sistema", value=f"{moderador.mention} (`{moderador.id}`)", inline=True)
+                            embed_log.set_footer(text="⚡ Registro de seguridad automatizado z6")
+
+                            await canal_logs.send(content=f"🔔 **Atención administradores:** {mencion_admins}", embed=embed_log)
+                    except Exception as e:
+                        print(f"Error enviando log al canal: {e}")
+
+                # Ejecuciones de IA (Mod, Revertir Sanciones, Roles, Links)
+                if "[ACCION:" in reply_text and message.guild:
+                    if message.author.guild_permissions.ban_members or message.author.guild_permissions.administrator:
+                        try:
+                            partes = reply_text.split("[ACCION:")[1].split("]")[0].split("|")
+                            tipo = partes[0].strip().lower()
+                            reply_text = reply_text.split("[ACCION:")[0].strip()
+                            razon = partes[2].strip() if len(partes) > 2 else "Acción vía IA"
+
+                            if tipo == "unban":
+                                id_a_desbanear = partes[1].strip().replace("<@", "").replace(">", "").replace("!", "").strip()
+                                usuario_obj = await bot.fetch_user(int(id_a_desbanear))
+                                await message.guild.unban(usuario_obj, reason=razon)
+                                
+                                await message.channel.send(f"🔓 He desbaneado correctamente a **{usuario_obj.name}**. Razón: {razon}")
+                                await enviar_log_moderacion(message.guild, "Usuario Desbaneado", f"**Razón:** {razon}", f"**{usuario_obj.name}** (`{usuario_obj.id}`)", message.author)
+                            
+                            elif message.mentions:
+                                obj = message.mentions[0]
+                                guild_id_str = str(message.guild.id)
+
+                                if tipo == "warn":
+                                    tw = registrar_warn_y_verificar(str(obj.id), guild_id_str, razon)
+                                    msg_w = f"⚠️ Warn emitido a {obj.mention} (Total: **{tw}/5**). Razón: {razon}"
+                                    
+                                    if tw >= 5:
+                                        await message.guild.ban(obj, reason="5 warns automáticos")
+                                        msg_w += f"\n🔨 {obj.mention} alcanzó los 5 warns y fue **baneado automáticamente**."
+                                        await enviar_log_moderacion(message.guild, "Baneo Automático (5 Warns)", f"**Razón:** Límite de warns alcanzado", f"{obj.mention} (`{obj.id}`)", bot.user)
+                                    elif tw >= 3:
+                                        await obj.timeout(timedelta(hours=2), reason="3 warns automáticos")
+                                        msg_w += f"\n🔇 {obj.mention} alcanzó los 3 warns y recibió un **mute automático de 2 horas**."
+                                        await enviar_log_moderacion(message.guild, "Mute Automático (3 Warns)", f"**Razón:** Límite de warns alcanzado", f"{obj.mention} (`{obj.id}`)", bot.user)
+                                    else:
+                                        await enviar_log_moderacion(message.guild, "Warn Registrado", f"**Razón:** {razon}\n**Total Warns:** {tw}/5", f"{obj.mention} (`{obj.id}`)", message.author)
+
+                                    await message.channel.send(msg_w)
+                                
+                                elif tipo == "unwarn":
+                                    restantes = remover_ultimo_warn(str(obj.id), guild_id_str)
+                                    await message.channel.send(f"✨ Se le ha retirado el último warn a {obj.mention}. Warns actuales: **{restantes}/5**")
+                                    await enviar_log_moderacion(message.guild, "Warn Removido (Unwarn)", f"**Warns restantes:** {restantes}/5", f"{obj.mention} (`{obj.id}`)", message.author)
+                                
+                                elif tipo == "ban":
+                                    await message.guild.ban(obj, reason=razon)
+                                    await message.channel.send(f"🔨 Baneado {obj.mention}. Razón: {razon}")
+                                    await enviar_log_moderacion(message.guild, "Usuario Baneado", f"**Razón:** {razon}", f"{obj.mention} (`{obj.id}`)", message.author)
+                                
+                                elif tipo == "kick":
+                                    await message.guild.kick(obj, reason=razon)
+                                    await message.channel.send(f"👢 Expulsado {obj.mention}. Razón: {razon}")
+                                    await enviar_log_moderacion(message.guild, "Usuario Expulsado (Kick)", f"**Razón:** {razon}", f"{obj.mention} (`{obj.id}`)", message.author)
+                                
+                                elif tipo == "mute":
+                                    await obj.timeout(timedelta(minutes=15), reason=razon)
+                                    await message.channel.send(f"🔇 Silenciado {obj.mention} por 15 minutos. Razón: {razon}")
+                                    await enviar_log_moderacion(message.guild, "Usuario Silenciado (Mute)", f"**Razón:** {razon}", f"{obj.mention} (`{obj.id}`)", message.author)
+                        except Exception as e:
+                            print(f"Error mod/revertir: {e}")
+                            reply_text += f"\n*(No pude ejecutar la acción de moderación: {e})*"
+
+                if "[CREAR_ROL:" in reply_text and message.guild:
+                    if message.author.guild_permissions.manage_roles or message.author.guild_permissions.administrator:
+                        try:
+                            partes_r = reply_text.split("[CREAR_ROL:")[1].split("]")[0].split("|")
+                            nombre_r, color_r = partes_r[0].strip(), partes_r[1].strip().lower() if len(partes_r) > 1 else "default"
+                            reply_text = reply_text.split("[CREAR_ROL:")[0].strip()
+                            
+                            colores = {"rojo": discord.Color.red(), "azul": discord.Color.blue(), "verde": discord.Color.green(), "amarillo": discord.Color.gold(), "morado": discord.Color.purple()}
+                            color_f = colores.get(color_r, discord.Color.default())
+                            
+                            nuevo_r = await message.guild.create_role(name=nombre_r, color=color_f)
+                            await message.channel.send(f"🎨 ¡Rol **{nuevo_r.name}** creado con éxito, bro!")
+                        except Exception as e:
+                            print(f"Error rol: {e}")
+
+                if "[PERMISO_LINK:" in reply_text and message.guild:
+                    if message.author.guild_permissions.administrator:
+                        try:
+                            partes_p = reply_text.split("[PERMISO_LINK:")[1].split("]")[0].split("|")
+                            t_id = partes_p[0].strip().replace("<@&", "").replace("<@", "").replace(">", "").strip()
+                            otorgar_permiso_link(t_id, str(message.guild.id), partes_p[1].strip().lower())
+                            reply_text = reply_text.split("[PERMISO_LINK:")[0].strip() + "\n✨ ¡Permiso de links registrado, bro!xd"
+                        except Exception as e:
+                            print(f"Error permiso link: {e}")
+
+                await message.reply(reply_text)
             except Exception as e:
-                print(f"Error con Groq: {e}")
-                await message.reply(f"Me quedé sin saldo. Error: `{str(e)}`")
-        
+                print(f"Error IA: {e}")
+                await message.reply(f"Falló la IA: `{e}`")
         return
-    
-        
-                
-        
-        
-    # --- 6. PROCESAR COMANDOS TRADICIONALES ---
+
+    # --- F. PROCESAR COMANDOS TRADICIONALES ---
     await bot.process_commands(message)
+    
 
 # Vista interactiva para el botón de repetir (va en el mensaje final)
 class RepeatView(discord.ui.View):
