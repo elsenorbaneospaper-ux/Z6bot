@@ -168,6 +168,8 @@ async def on_message(message):
         return
 
     user_id = str(message.author.id)
+    guild_id = str(message.guild.id) if message.guild else "dm"
+
 
     # --- A. FILTRO POTENTE DE LINKS Y ALERTA DE SEGURIDAD ---
     if "http://" in message.content.lower() or "https://" in message.content.lower() or "www." in message.content.lower() or "discord.gg/" in message.content.lower():
