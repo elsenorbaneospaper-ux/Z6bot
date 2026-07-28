@@ -271,6 +271,32 @@ async def on_message(message):
                 except discord.HTTPException:
                     pass
 
+            # --- SISTEMA SAVETEXTO ---
+    if message.guild:
+        savetextos_collection = db["savetextos"]
+        texto_guardado = savetextos_collection.find_one({
+            "guild_id": guild_id,
+            "activador": message.content.strip().lower()
+        })
+        if texto_guardado:
+            try:
+                roles_permitidos = texto_guardado.get("roles", "todos")
+                
+                # Validamos si el usuario tiene permiso para usar este activador
+                tiene_acceso = False
+                if roles_permitidos == "todos":
+                    tiene_acceso = True
+                elif message.author.guild_permissions.administrator:
+                    tiene_acceso = True
+                elif isinstance(roles_permitidos, list):
+                    tiene_acceso = any(rol.id in roles_permitidos for rol in message.author.roles)
+
+                if tiene_acceso:
+                    await message.channel.send(texto_guardado["contenido"])
+                    return
+            except Exception as e:
+                print(f"Error al enviar savetexto: {e}")
+                
     # --- E. COMANDO INTELIGENTE (IA CON MODERACIÓN Y LOGS AUTOMÁTICOS) ---
     if bot.user in message.mentions:
         pregunta = message.content
@@ -640,6 +666,230 @@ ROSTER_LIMITES = {
 }
 
 
+# ==========================================
+# 1. VISTA DE SELECCIÓN DE ROLES (MongoDB)
+# ==========================================
+
+class SeleccionRolesView(discord.ui.View):
+    def __init__(self, activador: str, mensaje: str):
+        super().__init__(timeout=180)
+        self.activador = activador
+        self.mensaje = mensaje
+
+    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Selecciona los roles permitidos...", min_values=1, max_values=25)
+    async def select_roles(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        roles_ids = [role.id for role in select.values]
+        await self.guardar_datos_mongo(interaction, roles_ids)
+
+    @discord.ui.button(label="Todos", style=discord.ButtonStyle.success, emoji="🌍")
+    async def btn_todos(self, interaction: discord.Interaction, button: Button):
+        await self.guardar_datos_mongo(interaction, "todos")
+
+    async def guardar_datos_mongo(self, interaction: discord.Interaction, roles_permitidos):
+        guild_id = str(interaction.guild_id)
+        try:
+            savetextos_collection = db["savetextos"]
+            
+            # Guardamos o actualizamos directamente en MongoDB
+            savetextos_collection.update_one(
+                {"guild_id": guild_id, "activador": self.activador.strip().lower()},
+                {"$set": {
+                    "contenido": self.mensaje,
+                    "roles": roles_permitidos
+                }},
+                upsert=True
+            )
+            
+            rol_msg = "Todos los miembros" if roles_permitidos == "todos" else f"{len(roles_permitidos)} rol(es) seleccionado(s)"
+            
+            await interaction.response.edit_message(
+                content=f"✅ **¡Respuesta guardada exitosamente en MongoDB!**\n\n📌 **Activador:** `{self.activador}`\n👥 **Roles permitidos:** {rol_msg}",
+                view=None
+            )
+        except Exception as e:
+            await interaction.response.edit_message(content=f"❌ Error al guardar en MongoDB: {e}", view=None)
+
+
+# ==========================================
+# 2. ACCIONES PARA GESTIONAR TEXTOS EXISTENTES (MongoDB)
+# ==========================================
+
+class AccionesTextoView(discord.ui.View):
+    def __init__(self, activador: str, mensaje_actual: str):
+        super().__init__(timeout=180)
+        self.activador = activador
+        self.mensaje_actual = mensaje_actual
+
+    @discord.ui.button(label="Borrar", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def borrar_btn(self, interaction: discord.Interaction, button: Button):
+        guild_id = str(interaction.guild_id)
+        savetextos_collection = db["savetextos"]
+
+        resultado = savetextos_collection.delete_one({
+            "guild_id": guild_id,
+            "activador": self.activador.strip().lower()
+        })
+
+        if resultado.deleted_count > 0:
+            await interaction.response.edit_message(
+                content=f"🗑️ El texto con activador **`{self.activador}`** ha sido borrado exitosamente.",
+                view=None
+            )
+            return
+
+        await interaction.response.edit_message(content="❌ No se encontró el texto para borrar en la base de datos.", view=None)
+
+    @discord.ui.button(label="Editar", style=discord.ButtonStyle.primary, emoji="✏️")
+    async def editar_btn(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(ModalEditarTexto(self.activador, self.mensaje_actual))
+
+    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancelar_btn(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.edit_message(content="❌ Operación cancelada.", view=None)
+
+
+class ModalEditarTexto(discord.ui.Modal, title="Editar Respuesta Automática"):
+    def __init__(self, activador: str, mensaje_actual: str):
+        super().__init__()
+        self.activador = activador
+
+        self.nuevo_mensaje = discord.ui.TextInput(
+            label="Nuevo Mensaje",
+            style=discord.TextStyle.paragraph,
+            default=mensaje_actual,
+            required=True
+        )
+        self.add_item(self.nuevo_mensaje)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        guild_id = str(interaction.guild_id)
+        nuevo_texto = self.nuevo_mensaje.value
+
+        try:
+            savetextos_collection = db["savetextos"]
+            resultado = savetextos_collection.update_one(
+                {"guild_id": guild_id, "activador": self.activador.strip().lower()},
+                {"$set": {"contenido": nuevo_texto}}
+            )
+            
+            if resultado.matched_count > 0:
+                await interaction.response.send_message(
+                    content=f"✅ El texto para **`{self.activador}`** ha sido actualizado exitosamente.",
+                    ephemeral=True
+                )
+                return
+
+            await interaction.response.send_message("❌ Error: No se encontró el activador en este servidor.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error al actualizar el texto: {e}", ephemeral=True)
+
+
+class SeleccionTextoSelect(discord.ui.Select):
+    def __init__(self, textos_cursor):
+        options = []
+        # Convertimos el cursor de MongoDB a lista para manejar los primeros 25
+        self.textos_lista = list(textos_cursor)[:25]
+        
+        for doc in self.textos_lista:
+            act = doc["activador"]
+            options.append(discord.SelectOption(label=act, description=f"Ver respuesta para: {act}"))
+
+        super().__init__(placeholder="Elige un texto para gestionar...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        activador_seleccionado = self.values[0]
+        
+        # Buscamos el documento específico en MongoDB
+        savetextos_collection = db["savetextos"]
+        doc = savetextos_collection.find_one({
+            "guild_id": str(interaction.guild_id),
+            "activador": activador_seleccionado
+        })
+
+        mensaje_guardado = doc.get("contenido", "Sin contenido") if doc else "Sin contenido"
+
+        view = AccionesTextoView(activador_seleccionado, mensaje_guardado)
+        await interaction.response.edit_message(
+            content=f"🔑 **Activador:** `{activador_seleccionado}`\n\n💬 **Mensaje:**\n{mensaje_guardado}",
+            view=view
+        )
+
+
+class VerTextoView(discord.ui.View):
+    def __init__(self, textos_cursor):
+        super().__init__(timeout=180)
+        self.add_item(SeleccionTextoSelect(textos_cursor))
+
+
+# ==========================================
+# 3. COMANDOS SLASH /VERTEXTO Y /SAVETEXTO
+# ==========================================
+
+@bot.tree.command(name="vertexto", description="Muestra una lista con los textos guardados para gestionarlos")
+@app_commands.checks.has_permissions(administrator=True)
+async def vertexto(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    guild_id = str(interaction.guild_id)
+
+    try:
+        savetextos_collection = db["savetextos"]
+        textos_cursor = list(savetextos_collection.find({"guild_id": guild_id}))
+
+        if not textos_cursor:
+            await interaction.followup.send("⚠️ No hay textos guardados en este servidor.", ephemeral=True)
+            return
+
+        view = VerTextoView(textos_cursor)
+        await interaction.followup.send("Selecciona de la lista el texto que deseas ver o administrar:", view=view, ephemeral=True)
+
+    except Exception as e:
+        await interaction.followup.send(f"❌ Ocurrió un error al leer los textos: {e}", ephemeral=True)
+
+
+class ModalGuardarTexto(discord.ui.Modal, title="Guardar Nueva Respuesta"):
+    activador = discord.ui.TextInput(
+        label="Activador (palabra clave)",
+        placeholder="Ej: hola o ¡ayuda",
+        style=discord.TextStyle.short,
+        required=True
+    )
+
+    mensaje = discord.ui.TextInput(
+        label="Mensaje a guardar",
+        placeholder="Escribe aquí el texto que responderá el bot...",
+        style=discord.TextStyle.paragraph,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        act = self.activador.value
+        msg = self.mensaje.value
+
+        view = SeleccionRolesView(activador=act, mensaje=msg)
+
+        await interaction.response.send_message(
+            f"✅ El texto para **`{act}`** está casi listo.\n\n👇 Por favor, selecciona qué roles pueden usar este comando:",
+            view=view,
+            ephemeral=True
+        )
+
+
+@bot.tree.command(name="savetexto", description="Guarda un texto personalizado asociado a un activador")
+@app_commands.checks.has_permissions(administrator=True)
+async def savetexto(interaction: discord.Interaction):
+    modal = ModalGuardarTexto()
+    await interaction.response.send_modal(modal)
+
+
+@savetexto.error
+async def savetexto_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        await interaction.response.send_message(
+            "❌ No tienes permisos de **Administrador** para usar este comando.",
+            ephemeral=True
+        )
+        
+
 # =========================================================
 # COMANDO UPDATEROASTER
 # =========================================================
@@ -833,219 +1083,10 @@ async def mensaje_o_embed_error(interaction: Interaction, error: app_commands.Ap
             ephemeral=True
         )
         
-# ==========================================
-# 1. VISTA DE SELECCIÓN DE ROLES
-# ==========================================
-
-class SeleccionRolesView(discord.ui.View):
-    def __init__(self, activador: str, mensaje: str):
-        super().__init__(timeout=180)
-        self.activador = activador
-        self.mensaje = mensaje
-
-    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Selecciona los roles permitidos...", min_values=1, max_values=25)
-    async def select_roles(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
-        roles_ids = [role.id for role in select.values]
-        await self.guardar_datos_sqlite(interaction, roles_ids)
-
-    @discord.ui.button(label="Todos", style=discord.ButtonStyle.success, emoji="🌍")
-    async def btn_todos(self, interaction: discord.Interaction, button: Button):
-        await self.guardar_datos_sqlite(interaction, "todos")
-
-    async def guardar_datos_sqlite(self, interaction: discord.Interaction, roles_permitidos):
-        guild_id = str(interaction.guild_id)
-        try:
-            datos_guild = cargar_respuestas_guild(guild_id)
-            datos_guild[self.activador] = {
-                "respuesta": self.mensaje,
-                "roles": roles_permitidos
-            }
-            guardar_respuestas_guild(guild_id, datos_guild)
-            
-            rol_msg = "Todos los miembros" if roles_permitidos == "todos" else f"{len(roles_permitidos)} rol(es) seleccionado(s)"
-            
-            await interaction.response.edit_message(
-                content=f"✅ **¡Respuesta guardada exitosamente!**\n\n📌 **Activador:** `{self.activador}`\n👥 **Roles permitidos:** {rol_msg}",
-                view=None
-            )
-        except Exception as e:
-            await interaction.response.edit_message(content=f"❌ Error al guardar en la base de datos: {e}", view=None)
 
 
-# ==========================================
-# 2. ACCIONES PARA GESTIONAR TEXTOS EXISTENTES
-# ==========================================
-
-class AccionesTextoView(discord.ui.View):
-    def __init__(self, activador: str, mensaje_actual: str):
-        super().__init__(timeout=180)
-        self.activador = activador
-        self.mensaje_actual = mensaje_actual
-
-    @discord.ui.button(label="Borrar", style=discord.ButtonStyle.danger, emoji="🗑️")
-    async def borrar_btn(self, interaction: discord.Interaction, button: Button):
-        guild_id = str(interaction.guild_id)
-        datos_guild = cargar_respuestas_guild(guild_id)
-
-        if datos_guild and self.activador in datos_guild:
-            del datos_guild[self.activador]
-            guardar_respuestas_guild(guild_id, datos_guild)
-
-            await interaction.response.edit_message(
-                content=f"🗑️ El texto con activador **`{self.activador}`** ha sido borrado exitosamente.",
-                view=None
-            )
-            return
-
-        await interaction.response.edit_message(content="❌ No se encontró el texto para borrar.", view=None)
-
-    @discord.ui.button(label="Editar", style=discord.ButtonStyle.primary, emoji="✏️")
-    async def editar_btn(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(ModalEditarTexto(self.activador, self.mensaje_actual))
-
-    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="❌")
-    async def cancelar_btn(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.edit_message(content="❌ Operación cancelada.", view=None)
 
 
-class ModalEditarTexto(discord.ui.Modal, title="Editar Respuesta Automática"):
-    def __init__(self, activador: str, mensaje_actual: str):
-        super().__init__()
-        self.activador = activador
-
-        self.nuevo_mensaje = discord.ui.TextInput(
-            label="Nuevo Mensaje",
-            style=discord.TextStyle.paragraph,
-            default=mensaje_actual,
-            required=True
-        )
-        self.add_item(self.nuevo_mensaje)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild_id)
-        nuevo_texto = self.nuevo_mensaje.value
-
-        try:
-            datos_guild = cargar_respuestas_guild(guild_id)
-            
-            if guild_id and self.activador in datos_guild:
-                if isinstance(datos_guild[self.activador], dict):
-                    datos_guild[self.activador]["respuesta"] = nuevo_texto
-                else:
-                    datos_guild[self.activador] = {"respuesta": nuevo_texto, "roles": "todos"}
-                
-                guardar_respuestas_guild(guild_id, datos_guild)
-                
-                await interaction.response.send_message(
-                    content=f"✅ El texto para **`{self.activador}`** ha sido actualizado exitosamente.",
-                    ephemeral=True
-                )
-                return
-
-            await interaction.response.send_message("❌ Error: No se encontró el activador en este servidor.", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f"❌ Error al actualizar el texto: {e}", ephemeral=True)
-
-
-class SeleccionTextoSelect(discord.ui.Select):
-    def __init__(self, textos_dict: dict):
-        options = []
-        for act in list(textos_dict.keys())[:25]:
-            options.append(discord.SelectOption(label=act, description=f"Ver respuesta para: {act}"))
-
-        super().__init__(placeholder="Elige un texto para gestionar...", min_values=1, max_values=1, options=options)
-        self.textos_dict = textos_dict
-
-    async def callback(self, interaction: discord.Interaction):
-        activador_seleccionado = self.values[0]
-        config_guardada = self.textos_dict.get(activador_seleccionado, "Sin contenido")
-
-        mensaje_guardado = config_guardada.get("respuesta", config_guardada) if isinstance(config_guardada, dict) else str(config_guardada)
-
-        view = AccionesTextoView(activador_seleccionado, mensaje_guardado)
-        await interaction.response.edit_message(
-            content=f"🔑 **Activador:** `{activador_seleccionado}`\n\n💬 **Mensaje:**\n{mensaje_guardado}",
-            view=view
-        )
-
-
-class VerTextoView(discord.ui.View):
-    def __init__(self, textos_dict: dict):
-        super().__init__(timeout=180)
-        self.add_item(SeleccionTextoSelect(textos_dict))
-
-
-# ==========================================
-# 3. COMANDO SLASH /VERTEXTO
-# ==========================================
-
-@bot.tree.command(name="vertexto", description="Muestra una lista con los textos guardados para gestionarlos")
-@app_commands.checks.has_permissions(administrator=True)
-async def vertexto(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    guild_id = str(interaction.guild_id)
-
-    try:
-        textos_servidor = cargar_respuestas_guild(guild_id)
-
-        if not textos_servidor:
-            await interaction.followup.send("⚠️ No hay textos guardados en este servidor.", ephemeral=True)
-            return
-
-        view = VerTextoView(textos_servidor)
-        await interaction.followup.send("Selecciona de la lista el texto que deseas ver o administrar:", view=view, ephemeral=True)
-
-    except Exception as e:
-        await interaction.followup.send(f"❌ Ocurrió un error al leer los textos: {e}", ephemeral=True)
-                
-
-# ==========================================
-# 4. COMANDO SLASH /SAVETEXTO Y MODAL
-# ==========================================
-
-class ModalGuardarTexto(discord.ui.Modal, title="Guardar Nueva Respuesta"):
-    activador = discord.ui.TextInput(
-        label="Activador (palabra clave)",
-        placeholder="Ej: hola o ¡ayuda",
-        style=discord.TextStyle.short,
-        required=True
-    )
-
-    mensaje = discord.ui.TextInput(
-        label="Mensaje a guardar",
-        placeholder="Escribe aquí el texto que responderá el bot...",
-        style=discord.TextStyle.paragraph,
-        required=True
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        act = self.activador.value
-        msg = self.mensaje.value
-
-        # Creamos la vista para seleccionar los roles que podrán usar este texto
-        view = SeleccionRolesView(activador=act, mensaje=msg)
-
-        await interaction.response.send_message(
-            f"✅ El texto para **`{act}`** está casi listo.\n\n👇 Por favor, selecciona qué roles pueden usar este comando:",
-            view=view,
-            ephemeral=True
-        )
-
-
-@bot.tree.command(name="savetexto", description="Guarda un texto personalizado asociado a un activador")
-@app_commands.checks.has_permissions(administrator=True)
-async def savetexto(interaction: discord.Interaction):
-    modal = ModalGuardarTexto()
-    await interaction.response.send_modal(modal)
-
-
-@savetexto.error
-async def savetexto_error(interaction: discord.Interaction, error):
-    if isinstance(error, app_commands.errors.MissingPermissions):
-        await interaction.response.send_message(
-            "❌ No tienes permisos de **Administrador** para usar este comando.",
-            ephemeral=True
-    )
         
 
 
