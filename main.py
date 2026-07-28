@@ -485,9 +485,8 @@ async def on_message(message):
                             rol_mencionado = message.role_mentions[0] if message.role_mentions else None
                             if rol_mencionado:
                                 await usuario_obj.remove_roles(rol_mencionado)
-                                await message.channel.send(f"✨ Le quité el rol **{rol_m
-
-
+                                await message.channel.send(f"✨ Le quité el rol **{rol_mencionado.name}** a {usuario_obj.mention}, bro.")
+        
 class RepeatView(discord.ui.View):
 
   def __init__(self, duration_seconds: int, reason: str):
