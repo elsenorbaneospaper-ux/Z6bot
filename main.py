@@ -489,7 +489,8 @@ async def on_message(message):
                             if rol_mencionado:
                                 await usuario_obj.remove_roles(rol_mencionado)
                                 await message.channel.send(f"✨ Le quité el rol **{rol_m
-
+                         except Exception as e:
+                             print(f"Error quitar rol: {e}")
                     
                                     
                 
