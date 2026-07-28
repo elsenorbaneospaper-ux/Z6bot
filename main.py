@@ -154,12 +154,8 @@ async def on_ready():
         print(f'❌ Error al sincronizar comandos: {e}')
 
 
-
 # ==========================================
-# EVENTO ON_MESSAGE (AFK, Comando Z6 y Respuestas)
-# ==========================================
-# ==========================================
-# EVENTO UNIFICADO on_message (Con Alertas Automáticas al Canal de Logs)
+# EVENTO UNIFICADO on_message (Completo y Actualizado)
 # ==========================================
 
 @bot.event
@@ -170,19 +166,15 @@ async def on_message(message):
     user_id = str(message.author.id)
     guild_id = str(message.guild.id) if message.guild else "dm"
 
-
     # --- A. FILTRO POTENTE DE LINKS Y ALERTA DE SEGURIDAD ---
     if "http://" in message.content.lower() or "https://" in message.content.lower() or "www." in message.content.lower() or "discord.gg/" in message.content.lower():
         if message.guild and not tiene_permiso_link(message.author):
             try:
                 await message.delete()
-                total_w = registrar_warn_y_verificar(str(message.author.id), str(message.guild.id), "Envío de link no autorizado")
+                total_w = registrar_warn_y_verificar(str(message.author.id), guild_id, "Envío de link no autorizado")
 
                 canal_alerta = message.guild.get_channel(1501692089170399343)
                 if canal_alerta:
-                    roles_admin = [rol.mention for rol in message.guild.roles if rol.permissions.administrator or rol.permissions.manage_guild]
-                    mencion_admins = " ".join(roles_admin[:5])
-
                     embed_alerta = discord.Embed(
                         title="🚨 ¡Alerta de Seguridad: Link Bloqueado!",
                         description="Se ha detectado y bloqueado un enlace no autorizado.",
@@ -193,7 +185,7 @@ async def on_message(message):
                     embed_alerta.add_field(name="🔗 Contenido", value=f"```{message.content}```", inline=False)
                     embed_alerta.add_field(name="⚠️ Sanción", value=f"Mensaje borrado. Warns: **{total_w}/5**", inline=False)
                     
-                    await canal_alerta.send(content=f"🔔 **Atención administradores:** {mencion_admins}", embed=embed_alerta)
+                    await canal_alerta.send(embed=embed_alerta)
                 
                 aviso = await message.channel.send(f"⚠️ {message.author.mention}, no tienes permisos para enviar links aquí, bro.")
                 await asyncio.sleep(5)
@@ -273,18 +265,17 @@ async def on_message(message):
                 except discord.HTTPException:
                     pass
 
-            # --- SISTEMA SAVETEXTO ---
+    # --- E. SISTEMA SAVETEXTO (MongoDB con validación de roles) ---
     if message.guild:
         savetextos_collection = db["savetextos"]
         texto_guardado = savetextos_collection.find_one({
-            "guild_id": guild_id,
+            "guild_id": guild_id, 
             "activador": message.content.strip().lower()
         })
         if texto_guardado:
             try:
                 roles_permitidos = texto_guardado.get("roles", "todos")
                 
-                # Validamos si el usuario tiene permiso para usar este activador
                 tiene_acceso = False
                 if roles_permitidos == "todos":
                     tiene_acceso = True
@@ -298,8 +289,8 @@ async def on_message(message):
                     return
             except Exception as e:
                 print(f"Error al enviar savetexto: {e}")
-                
-    # --- E. COMANDO INTELIGENTE (IA CON MODERACIÓN Y LOGS AUTOMÁTICOS) ---
+
+    # --- F. COMANDO INTELIGENTE (IA CON PERSONALIDAD CHILL, ACCIONES TOTALES Y JERARQUÍA) ---
     if bot.user in message.mentions:
         pregunta = message.content
         for mention in message.mentions:
@@ -340,12 +331,17 @@ async def on_message(message):
         async with message.channel.typing():
             try:
                 system_prompt = (
-                    "Eres un asistente de Discord amigable, relajado y buena onda por defecto. "
-                    "EXCEPCIÓN 1 (MODERACIÓN): Si un moderador te ordena una sanción o revertirla (warn, mute, kick, ban, unwarn, unban), adopta postura seria y añade al final: [ACCION: tipo | usuario_o_id | razon]. "
-                    "EXCEPCIÓN 2 (ROLES): Si piden crear un rol, añade: [CREAR_ROL: nombre | color]. "
+                    "Eres un tío súper chill, relajado de cojones, con buen rollo y hablas de forma natural (usando términos como 'bro', 'tío', 'xd'). "
+                    "EXCEPCIÓN 1 (MODERACIÓN SERIA): En cuanto te ordenen aplicar una sanción (warn, mute, kick, ban, unwarn, unban), ponte 100% serio y formal. Añade al final: [ACCION: tipo | usuario_o_id | razon]. "
+                    "EXCEPCIÓN 2 (ADMINISTRACIÓN TOTAL Y AVANZADA): "
+                    "- Si piden crear un rol, añade: [CREAR_ROL: nombre | color]. "
+                    "- Si piden crear un canal, añade: [CREAR_CANAL: nombre | texto/voz]. "
+                    "- Si piden dar un rol, añade: [DAR_ROL]. "
+                    "- Si piden quitar un rol, añade: [QUITAR_ROL]. "
+                    "- Si piden subir o mover un rol de posición, añade: [SUBIR_ROL: @rol | posicion_numerica]. "
+                    "- Si piden cambiar permisos a un rol, añade: [PERMISOS_ROL: @rol | admin/moderador/basico]. "
                     "EXCEPCIÓN 3 (PERMISO DE LINKS): Si piden dar permisos de links, añade: [PERMISO_LINK: id | tipo]. "
-                    "REGLAS: Responde solo en español. Usa emojis ':borja:' y ':Embobao:'. "
-                    "Humor: incluye exactamente una sola palabra de internet (ej: 'bro', 'xd'). Máximo 75 palabras, oraciones de mínimo 15 palabras."
+                    "REGLAS: Responde solo en español. Para usar emojis personalizados (como Borja o Embobao), escríbelos usando su estructura exacta con ID (ej: <:borja:ID>). Máximo 75 palabras."
                 )
 
                 messages = [{"role": "system", "content": system_prompt}]
@@ -361,14 +357,10 @@ async def on_message(message):
 
                 reply_text = completion.choices[0].message.content or "xd."
 
-                # Función auxiliar interna para enviar logs al canal 1501692089170399343
                 async def enviar_log_moderacion(guild, titulo, descripcion_accion, usuario_afectado_str, moderador):
                     try:
                         canal_logs = guild.get_channel(1501692089170399343)
                         if canal_logs:
-                            roles_admin = [rol.mention for rol in guild.roles if rol.permissions.administrator or rol.permissions.manage_guild]
-                            mencion_admins = " ".join(roles_admin[:5])
-
                             embed_log = discord.Embed(
                                 title=f"🛡️ {titulo}",
                                 description=descripcion_accion,
@@ -378,11 +370,11 @@ async def on_message(message):
                             embed_log.add_field(name="👮 Moderador / Sistema", value=f"{moderador.mention} (`{moderador.id}`)", inline=True)
                             embed_log.set_footer(text="⚡ Registro de seguridad automatizado z6")
 
-                            await canal_logs.send(content=f"🔔 **Atención administradores:** {mencion_admins}", embed=embed_log)
+                            await canal_logs.send(embed=embed_log)
                     except Exception as e:
                         print(f"Error enviando log al canal: {e}")
 
-                # Ejecuciones de IA (Mod, Revertir Sanciones, Roles, Links)
+                # 1. EJECUCIÓN DE MODERACIÓN
                 if "[ACCION:" in reply_text and message.guild:
                     if message.author.guild_permissions.ban_members or message.author.guild_permissions.administrator:
                         try:
@@ -395,16 +387,14 @@ async def on_message(message):
                                 id_a_desbanear = partes[1].strip().replace("<@", "").replace(">", "").replace("!", "").strip()
                                 usuario_obj = await bot.fetch_user(int(id_a_desbanear))
                                 await message.guild.unban(usuario_obj, reason=razon)
-                                
                                 await message.channel.send(f"🔓 He desbaneado correctamente a **{usuario_obj.name}**. Razón: {razon}")
                                 await enviar_log_moderacion(message.guild, "Usuario Desbaneado", f"**Razón:** {razon}", f"**{usuario_obj.name}** (`{usuario_obj.id}`)", message.author)
                             
                             elif message.mentions:
                                 obj = message.mentions[0]
-                                guild_id_str = str(message.guild.id)
 
                                 if tipo == "warn":
-                                    tw = registrar_warn_y_verificar(str(obj.id), guild_id_str, razon)
+                                    tw = registrar_warn_y_verificar(str(obj.id), guild_id, razon)
                                     msg_w = f"⚠️ Warn emitido a {obj.mention} (Total: **{tw}/5**). Razón: {razon}"
                                     
                                     if tw >= 5:
@@ -421,7 +411,7 @@ async def on_message(message):
                                     await message.channel.send(msg_w)
                                 
                                 elif tipo == "unwarn":
-                                    restantes = remover_ultimo_warn(str(obj.id), guild_id_str)
+                                    restantes = remover_ultimo_warn(str(obj.id), guild_id)
                                     await message.channel.send(f"✨ Se le ha retirado el último warn a {obj.mention}. Warns actuales: **{restantes}/5**")
                                     await enviar_log_moderacion(message.guild, "Warn Removido (Unwarn)", f"**Warns restantes:** {restantes}/5", f"{obj.mention} (`{obj.id}`)", message.author)
                                 
@@ -441,8 +431,8 @@ async def on_message(message):
                                     await enviar_log_moderacion(message.guild, "Usuario Silenciado (Mute)", f"**Razón:** {razon}", f"{obj.mention} (`{obj.id}`)", message.author)
                         except Exception as e:
                             print(f"Error mod/revertir: {e}")
-                            reply_text += f"\n*(No pude ejecutar la acción de moderación: {e})*"
 
+                # 2. CREAR ROL
                 if "[CREAR_ROL:" in reply_text and message.guild:
                     if message.author.guild_permissions.manage_roles or message.author.guild_permissions.administrator:
                         try:
@@ -451,34 +441,53 @@ async def on_message(message):
                             reply_text = reply_text.split("[CREAR_ROL:")[0].strip()
                             
                             colores = {"rojo": discord.Color.red(), "azul": discord.Color.blue(), "verde": discord.Color.green(), "amarillo": discord.Color.gold(), "morado": discord.Color.purple()}
-                            color_f = colores.get(color_r, discord.Color.default())
-                            
-                            nuevo_r = await message.guild.create_role(name=nombre_r, color=color_f)
+                            nuevo_r = await message.guild.create_role(name=nombre_r, color=colores.get(color_r, discord.Color.default()))
                             await message.channel.send(f"🎨 ¡Rol **{nuevo_r.name}** creado con éxito, bro!")
                         except Exception as e:
                             print(f"Error rol: {e}")
 
-                if "[PERMISO_LINK:" in reply_text and message.guild:
-                    if message.author.guild_permissions.administrator:
+                # 3. CREAR CANAL
+                if "[CREAR_CANAL:" in reply_text and message.guild:
+                    if message.author.guild_permissions.manage_channels or message.author.guild_permissions.administrator:
                         try:
-                            partes_p = reply_text.split("[PERMISO_LINK:")[1].split("]")[0].split("|")
-                            t_id = partes_p[0].strip().replace("<@&", "").replace("<@", "").replace(">", "").strip()
-                            otorgar_permiso_link(t_id, str(message.guild.id), partes_p[1].strip().lower())
-                            reply_text = reply_text.split("[PERMISO_LINK:")[0].strip() + "\n✨ ¡Permiso de links registrado, bro!xd"
+                            partes_c = reply_text.split("[CREAR_CANAL:")[1].split("]")[0].split("|")
+                            nombre_c = partes_c[0].strip()
+                            tipo_c = partes_c[1].strip().lower() if len(partes_c) > 1 else "texto"
+                            reply_text = reply_text.split("[CREAR_CANAL:")[0].strip()
+                            
+                            if "voz" in tipo_c:
+                                nuevo_c = await message.guild.create_voice_channel(name=nombre_c)
+                            else:
+                                nuevo_c = await message.guild.create_text_channel(name=nombre_c)
+                            await message.channel.send(f"📂 ¡Canal **{nuevo_c.name}** creado con éxito, bro!")
                         except Exception as e:
-                            print(f"Error permiso link: {e}")
+                            print(f"Error canal: {e}")
 
-                await message.reply(reply_text)
-            except Exception as e:
-                print(f"Error IA: {e}")
-                await message.reply(f"Falló la IA: `{e}`")
-        return
+                # 4. DAR ROL A USUARIO
+                if "[DAR_ROL]" in reply_text and message.guild and message.mentions:
+                    if message.author.guild_permissions.manage_roles or message.author.guild_permissions.administrator:
+                        try:
+                            reply_text = reply_text.split("[DAR_ROL]")[0].strip()
+                            usuario_obj = message.mentions[0]
+                            rol_mencionado = message.role_mentions[0] if message.role_mentions else None
+                            if rol_mencionado:
+                                await usuario_obj.add_roles(rol_mencionado)
+                                await message.channel.send(f"✨ Le asigné el rol **{rol_mencionado.name}** a {usuario_obj.mention}, bro.")
+                        except Exception as e:
+                            print(f"Error dar rol: {e}")
 
-    # --- F. PROCESAR COMANDOS TRADICIONALES ---
-    await bot.process_commands(message)
-    
+                # 5. QUITAR ROL A USUARIO
+                if "[QUITAR_ROL]" in reply_text and message.guild and message.mentions:
+                    if message.author.guild_permissions.manage_roles or message.author.guild_permissions.administrator:
+                        try:
+                            reply_text = reply_text.split("[QUITAR_ROL]")[0].strip()
+                            usuario_obj = message.mentions[0]
+                            rol_mencionado = message.role_mentions[0] if message.role_mentions else None
+                            if rol_mencionado:
+                                await usuario_obj.remove_roles(rol_mencionado)
+                                await message.channel.send(f"✨ Le quité el rol **{rol_m
 
-# Vista interactiva para el botón de repetir (va en el mensaje final)
+
 class RepeatView(discord.ui.View):
 
   def __init__(self, duration_seconds: int, reason: str):
