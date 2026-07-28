@@ -157,6 +157,9 @@ async def on_ready():
 # ==========================================
 # EVENTO UNIFICADO on_message (Completo y Actualizado)
 # ==========================================
+# ==========================================
+# EVENTO UNIFICADO on_message (Completo y Actualizado)
+# ==========================================
 
 @bot.event
 async def on_message(message):
@@ -462,31 +465,33 @@ async def on_message(message):
                             await message.channel.send(f"📂 ¡Canal **{nuevo_c.name}** creado con éxito, bro!")
                         except Exception as e:
                             print(f"Error canal: {e}")
-    # 4. DAR ROL A USUARIO
-    if "[DAR_ROL]" in reply_text and message.guild and message.mentions:
-        if message.author.guild_permissions.manage_roles or message.author.guild_permissions.administrator:
-            try:
-                reply_text = reply_text.split("[DAR_ROL]")[0].strip()
-                usuario_obj = message.mentions[0]
-                rol_mencionado = message.role_mentions[0] if message.role_mentions else None
-                if rol_mencionado:
-                    await usuario_obj.add_roles(rol_mencionado)
-                    await message.channel.send(f"✨ Le asigné el rol **{rol_mencionado.name}** a {usuario_obj.mention}, bro.")
-            except Exception as e:
-                print(f"Error dar rol: {e}")
 
-    # 5. QUITAR ROL A USUARIO
-    if "[QUITAR_ROL]" in reply_text and message.guild and message.mentions:
-        if message.author.guild_permissions.manage_roles or message.author.guild_permissions.administrator:
-            try:
-                reply_text = reply_text.split("[QUITAR_ROL]")[0].strip()
-                usuario_obj = message.mentions[0]
-                rol_mencionado = message.role_mentions[0] if message.role_mentions else None
-                if rol_mencionado:
-                    await usuario_obj.remove_roles(rol_mencionado)
-                    await message.channel.send(f"✨ Le quité el rol **{rol_mencionado.name}** a {usuario_obj.mention}, bro.")
-            except Exception as e:
-                print(f"Error quitar rol: {e}")
+                # 4. DAR ROL A USUARIO
+                if "[DAR_ROL]" in reply_text and message.guild and message.mentions:
+                    if message.author.guild_permissions.manage_roles or message.author.guild_permissions.administrator:
+                        try:
+                            reply_text = reply_text.split("[DAR_ROL]")[0].strip()
+                            usuario_obj = message.mentions[0]
+                            rol_mencionado = message.role_mentions[0] if message.role_mentions else None
+                            if rol_mencionado:
+                                await usuario_obj.add_roles(rol_mencionado)
+                                await message.channel.send(f"✨ Le asigné el rol **{rol_mencionado.name}** a {usuario_obj.mention}, bro.")
+                        except Exception as e:
+                            print(f"Error dar rol: {e}")
+
+                # 5. QUITAR ROL A USUARIO
+                if "[QUITAR_ROL]" in reply_text and message.guild and message.mentions:
+                    if message.author.guild_permissions.manage_roles or message.author.guild_permissions.administrator:
+                        try:
+                            reply_text = reply_text.split("[QUITAR_ROL]")[0].strip()
+                            usuario_obj = message.mentions[0]
+                            rol_mencionado = message.role_mentions[0] if message.role_mentions else None
+                            if rol_mencionado:
+                                await usuario_obj.remove_roles(rol_mencionado)
+                                await message.channel.send(f"✨ Le quité el rol **{rol_m
+
+                    
+                                    
                 
                 
                 
