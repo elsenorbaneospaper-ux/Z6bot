@@ -185,78 +185,29 @@ async def on_message(message):
                     print(f"No se pudo enviar el mensaje AFK: {e}")
 
  
+                    await bot.process_commands(message)
+                    
+@bot.command(name='darrol')
+async def darrol(ctx):
+    role_id = 1530154761720958976
+    role = ctx.guild.get_role(role_id)
     
-           
-class SelectServidor(discord.ui.Select):
-    def __init__(self, bot, user_id, razon):
-        self.bot = bot
-        self.user_id = user_id
-        self.razon = razon
+    if not role:
+        await ctx.send("El rol especificado no existe en este servidor.")
+        return
 
-        # Obtener la lista de servidores donde está el bot (máximo 25 opciones por límite de Discord)
-        options = []
-        for guild in list(bot.guilds)[:25]:
-            options.append(
-                discord.SelectOption(
-                    label=guild.name[:100], 
-                    value=str(guild.id), 
-                    description=f"ID: {guild.id}"
-                )
-            )
+    if role in ctx.author.roles:
+        await ctx.send("¡Ya tienes este rol!")
+        return
 
-        super().__init__(placeholder="Selecciona el servidor de destino...", min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
-        target_guild_id = int(self.values[0])
-        target_guild = self.bot.get_guild(target_guild_id)
-
-        try:
-            user_obj = discord.Object(id=int(self.user_id))
-            await target_guild.unban(user_obj, reason=self.razon)
-
-            embed = discord.Embed(
-                title="✅ Desbaneo Remoto Exitoso",
-                color=discord.Color.green(),
-                timestamp=discord.utils.utcnow()
-            )
-            embed.add_field(name="Servidor", value=f"{target_guild.name} (`{target_guild.id}`)", inline=True)
-            embed.add_field(name="Usuario ID", value=f"`{self.user_id}`", inline=True)
-            embed.add_field(name="Moderador", value=f"{interaction.user.mention}", inline=False)
-            embed.add_field(name="Razón", value=self.razon, inline=False)
-
-            await interaction.edit_reply(content=None, embeds=[embed], view=None)
-
-        except discord.NotFound:
-            await interaction.edit_reply(content="❌ El usuario no se encuentra baneado en ese servidor o la ID es incorrecta.", view=None)
-        except discord.Forbidden:
-            await interaction.edit_reply(content="❌ El bot no tiene permisos suficientes (**Banear miembros**) en ese servidor.", view=None)
-        except Exception as e:
-            print(e)
-            await interaction.edit_reply(content="❌ Ocurrió un error inesperado al procesar el desbaneo.", view=None)
-
-class VistaServidores(discord.ui.View):
-    def __init__(self, bot, user_id, razon):
-        super().__init__(timeout=60)
-        self.add_item(SelectServidor(bot, user_id, razon))
-
-@bot.tree.command(name="unban-remoto", description="Desbanea a un usuario seleccionando el servidor de una lista.")
-@app_commands.describe(
-    usuario_id="ID del usuario que será desbaneado",
-    razon="Razón del desbaneo"
-)
-@app_commands.checks.has_permissions(administrator=True)
-async def unban_remoto(interaction: discord.Interaction, usuario_id: str, razon: str = "Sin razón especificada (Remoto)"):
     try:
-        int(usuario_id)
-    except ValueError:
-        return await interaction.response.send_message("❌ La ID del usuario debe ser un número válido.", ephemeral=True)
-
-    view = VistaServidores(bot, usuario_id, razon)
-    await interaction.response.send_message("🌐 Selecciona de la lista el servidor donde deseas realizar el desbaneo:", view=view, ephemeral=True)
-    
-
+        await ctx.author.add_roles(role)
+        await ctx.send(f"¡Se te ha asignado el rol **{role.name}** correctamente, {ctx.author.mention}!")
+    except discord.Forbidden:
+        await ctx.send("No tengo permisos suficientes para asignarte este rol. Coloca el rol del bot por encima del rol a asignar.")
+    except Exception as e:
+        await ctx.send(f"Ocurrió un error inesperado: {e}")
+        
 # ==================== COMANDO /mensaje ====================
 
 # 1. Definir el formulario (Modal)
