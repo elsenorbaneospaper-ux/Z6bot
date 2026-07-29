@@ -182,7 +182,7 @@ async def on_message(message):
                 try:
                     await message.channel.send(aviso_afk)
                 except discord.HTTPException:
-                    
+                    print(f"No se pudo enviar el mensaje AFK: {e}")
 
  
     
