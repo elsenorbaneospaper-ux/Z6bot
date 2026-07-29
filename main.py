@@ -477,8 +477,8 @@ async def on_message(message):
                                 await message.channel.send(f"✨ Le asigné el rol **{rol_mencionado.name}** a {usuario_obj.mention}, bro.")
                         except Exception as e:
                             print(f"Error dar rol: {e}")                                               
-class RepeatView(discord.ui.View):
 
+class RepeatView(discord.ui.View):
   def __init__(self, duration_seconds: int, reason: str):
     super().__init__(timeout=None)
     self.duration_seconds = duration_seconds
