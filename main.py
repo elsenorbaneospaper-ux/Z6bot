@@ -340,7 +340,6 @@ async def on_message(message):
                     "- Si piden crear un rol, añade: [CREAR_ROL: nombre | color]. "
                     "- Si piden crear un canal, añade: [CREAR_CANAL: nombre | texto/voz]. "
                     "- Si piden dar un rol, añade: [DAR_ROL]. "
-                    "- Si piden quitar un rol, añade: [QUITAR_ROL]. "
                     "- Si piden subir o mover un rol de posición, añade: [SUBIR_ROL: @rol | posicion_numerica]. "
                     "- Si piden cambiar permisos a un rol, añade: [PERMISOS_ROL: @rol | admin/moderador/basico]. "
                     "EXCEPCIÓN 3 (PERMISO DE LINKS): Si piden dar permisos de links, añade: [PERMISO_LINK: id | tipo]. "
@@ -478,20 +477,7 @@ async def on_message(message):
                                 await message.channel.send(f"✨ Le asigné el rol **{rol_mencionado.name}** a {usuario_obj.mention}, bro.")
                         except Exception as e:
                             print(f"Error dar rol: {e}")
-# 5. QUITAR ROL A USUARIO
-if "[QUITAR_ROL]" in reply_text and message.guild and message.mentions:
-    if message.author.guild_permissions.manage_roles or message.author.guild_permissions.administrator:
-        try:
-            reply_text = reply_text.split("[QUITAR_ROL]")[0].strip()
-            usuario_obj = message.mentions[0]
-            rol_mencionado = message.role_mentions[0] if message.role_mentions else None
 
-            if rol_mencionado:
-                await usuario_obj.remove_roles(rol_mencionado)
-                await message.channel.send(f"✨ Le quité el rol **{rol_mencionado.name}**")
-        except Exception as e:
-            print(f"Error quitar rol: {e}")
-            
                 
                 
                 
