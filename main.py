@@ -480,9 +480,8 @@ async def on_message(message):
                         
                         except Exception as e:
                              print(f"Error dar rol: {e}")                                               
-
-
-
+                        finally:
+                            print("Esto se ejecuta siempre al terminar.")
     
              
 
